@@ -59,6 +59,8 @@ jobs:
         with:
           version: 0.12.5
           python-version: 3.14.6
+      - name: Install locked validation dependencies
+        run: uv sync --extra dev --frozen
       - name: Compile Bicep
         run: |
           az bicep install
@@ -118,4 +120,3 @@ jobs:
           outputs: type=cacheonly
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
