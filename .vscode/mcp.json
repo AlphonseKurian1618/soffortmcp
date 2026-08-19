@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "soffortbackend": {
+      "type": "http",
+      "url": "https://soffort.com/mcp",
+      "oauth": {
+        "clientId": "REPLACE_WITH_ENTRA_PUBLIC_CLIENT_ID"
+      }
+    }
+  }
+}
+

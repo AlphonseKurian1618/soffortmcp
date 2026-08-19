@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gateway-api-standard
+  namespace: flux-system
+spec:
+  interval: 24h
+  timeout: 60s
+  url: https://github.com/kubernetes-sigs/gateway-api.git
+  ref:
+    # Commit behind the immutable v1.6.1 release tag. Pinning the commit avoids
+    # executing changed CRDs if a remote tag is ever moved.
+    commit: 8bb74df00e56ec8f944d48c25e6c1c9c2f6848e3

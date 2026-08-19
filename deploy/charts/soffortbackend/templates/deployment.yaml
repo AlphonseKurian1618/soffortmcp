@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "soffortbackend.fullname" . }}
+  labels:
+    {{- include "soffortbackend.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "soffortbackend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "soffortbackend.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "soffortbackend.fullname" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "soffortbackend.selectorLabels" . | nindent 14 }}
+      containers:
+        - name: soffortbackend
+          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: SOFFORT_ENVIRONMENT
+              value: production
+            - name: SOFFORT_ENTRA_ISSUER
+              value: {{ .Values.identity.issuer | quote }}
+            - name: SOFFORT_ENTRA_JWKS_URL
+              value: {{ .Values.identity.jwksUrl | quote }}
+            - name: SOFFORT_ENTRA_TENANT_ID
+              value: {{ .Values.identity.tenantId | quote }}
+            - name: SOFFORT_ENTRA_API_AUDIENCE
+              value: {{ .Values.identity.apiAudience | quote }}
+            - name: SOFFORT_ENTRA_VSCODE_CLIENT_ID
+              value: {{ .Values.identity.vscodeClientId | quote }}
+            - name: SOFFORT_REQUIRED_SCOPE_VALUE
+              value: {{ .Values.identity.scopeValue | quote }}
+            - name: SOFFORT_REQUIRED_SCOPE_URI
+              value: {{ .Values.identity.scopeUri | quote }}
+            - name: SOFFORT_ALLOWED_HOSTS_CSV
+              value: soffort.com
+            - name: SOFFORT_ALLOWED_ORIGINS_CSV
+              value: https://vscode.dev
+            - name: SOFFORT_LOG_LEVEL
+              value: INFO
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=2)"
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=2)"
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)"
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: temporary
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+

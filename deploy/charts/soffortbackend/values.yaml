@@ -1,0 +1,42 @@
+replicaCount: 2
+
+image:
+  repository: example.invalid/soffortbackend
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pullPolicy: IfNotPresent
+
+identity:
+  issuer: https://tenant.ciamlogin.com/tenant/v2.0
+  jwksUrl: https://tenant.ciamlogin.com/tenant/discovery/v2.0/keys
+  tenantId: 00000000-0000-0000-0000-000000000000
+  apiAudience: 00000000-0000-0000-0000-000000000000
+  vscodeClientId: 00000000-0000-0000-0000-000000000000
+  scopeValue: soffortbackend.access
+  scopeUri: https://soffort.com/mcp/soffortbackend.access
+
+service:
+  port: 80
+  targetPort: 8000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+
+gateway:
+  hostname: soffort.com
+  className: traefik
+  tlsSecretName: soffort-com-tls
+
+rateLimit:
+  average: 60
+  burst: 20
+

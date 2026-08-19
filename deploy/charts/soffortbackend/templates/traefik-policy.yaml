@@ -1,0 +1,33 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: soffortbackend-body-limit
+  labels:
+    {{- include "soffortbackend.labels" . | nindent 4 }}
+spec:
+  buffering:
+    maxRequestBodyBytes: 1048576
+    memRequestBodyBytes: 262144
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: soffortbackend-rate-limit
+  labels:
+    {{- include "soffortbackend.labels" . | nindent 4 }}
+spec:
+  rateLimit:
+    average: {{ .Values.rateLimit.average }}
+    burst: {{ .Values.rateLimit.burst }}
+    period: 1m
+---
+apiVersion: traefik.io/v1alpha1
+kind: TLSOption
+metadata:
+  name: default
+  labels:
+    {{- include "soffortbackend.labels" . | nindent 4 }}
+spec:
+  minVersion: VersionTLS12
+  sniStrict: true
+

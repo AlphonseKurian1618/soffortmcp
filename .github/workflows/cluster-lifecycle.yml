@@ -1,0 +1,54 @@
+name: cluster lifecycle
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Desired cluster state
+        required: true
+        type: choice
+        options: [start, stop]
+  schedule:
+    # GitHub schedules are UTC. Running hourly and evaluating Los Angeles local
+    # time makes the stop policy correct across daylight-saving transitions.
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cluster-lifecycle-development
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    name: start or cost-protect the development cluster
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Sign in with the cluster-only lifecycle identity
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ vars.AZURE_LIFECYCLE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Apply requested or scheduled state
+        shell: bash
+        env:
+          REQUESTED_ACTION: ${{ inputs.action }}
+          EVENT_NAME: ${{ github.event_name }}
+          TZ: America/Los_Angeles
+        run: |
+          action="${REQUESTED_ACTION}"
+          if [[ "${EVENT_NAME}" == "schedule" ]]; then
+            hour="$(date +%H)"
+            if (( 10#${hour} >= 19 || 10#${hour} < 7 )); then action=stop; else exit 0; fi
+          fi
+          state="$(az aks show -g rg-soffortbackend-dev-wus2 -n aks-soffortbackend-dev-wus2 --query powerState.code -o tsv)"
+          if [[ "${action}" == "start" && "${state}" != "Running" ]]; then
+            az aks start -g rg-soffortbackend-dev-wus2 -n aks-soffortbackend-dev-wus2 --no-wait
+          elif [[ "${action}" == "stop" && "${state}" == "Running" ]]; then
+            az aks stop -g rg-soffortbackend-dev-wus2 -n aks-soffortbackend-dev-wus2 --no-wait
+          fi
+

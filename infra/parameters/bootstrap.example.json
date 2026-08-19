@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "westus2" },
+    "resourceGroupName": { "value": "rg-soffortbackend-dev-wus2" },
+    "dnsZoneResourceGroupName": { "value": "REPLACE_WITH_DNS_RESOURCE_GROUP" },
+    "budgetContactEmails": { "value": ["REPLACE_WITH_OPERATOR_EMAIL"] }
+  }
+}
+

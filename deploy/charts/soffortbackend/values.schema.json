@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["replicaCount", "image", "identity", "service", "resources", "autoscaling", "gateway", "rateLimit"],
+  "properties": {
+    "replicaCount": { "type": "integer", "const": 2 },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "digest", "pullPolicy"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "pullPolicy": { "type": "string", "enum": ["IfNotPresent"] }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer", "jwksUrl", "tenantId", "apiAudience", "vscodeClientId", "scopeValue", "scopeUri"],
+      "properties": {
+        "issuer": { "type": "string", "minLength": 1 },
+        "jwksUrl": { "type": "string", "minLength": 1 },
+        "tenantId": { "type": "string", "minLength": 1 },
+        "apiAudience": { "type": "string", "minLength": 1 },
+        "vscodeClientId": { "type": "string", "minLength": 1 },
+        "scopeValue": { "type": "string", "const": "soffortbackend.access" },
+        "scopeUri": { "type": "string", "const": "https://soffort.com/mcp/soffortbackend.access" }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port", "targetPort"],
+      "properties": {
+        "port": { "type": "integer", "const": 80 },
+        "targetPort": { "type": "integer", "const": 8000 }
+      }
+    },
+    "resources": { "type": "object" },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minReplicas", "maxReplicas", "targetCPUUtilizationPercentage"],
+      "properties": {
+        "minReplicas": { "type": "integer", "const": 2 },
+        "maxReplicas": { "type": "integer", "maximum": 4 },
+        "targetCPUUtilizationPercentage": { "type": "integer", "const": 70 }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostname", "className", "tlsSecretName"],
+      "properties": {
+        "hostname": { "type": "string", "const": "soffort.com" },
+        "className": { "type": "string", "const": "traefik" },
+        "tlsSecretName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "rateLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["average", "burst"],
+      "properties": {
+        "average": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "burst": { "type": "integer", "minimum": 1, "maximum": 40 }
+      }
+    }
+  }
+}
+

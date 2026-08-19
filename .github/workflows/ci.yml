@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: application
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: 0.12.5
+          python-version: 3.14.6
+          enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --extra dev --frozen
+      - name: Lint and type-check
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+      - name: Test with coverage
+        run: uv run pytest
+      - name: Audit production dependencies
+        run: |
+          uv export --frozen --no-dev --no-emit-project --output-file /tmp/requirements.txt
+          uv run pip-audit --strict --requirement /tmp/requirements.txt
+      - name: Scan repository dependencies, secrets, and configuration
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  infrastructure:
+    name: infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: 0.12.5
+          python-version: 3.14.6
+      - name: Compile Bicep
+        run: |
+          az bicep install
+          az bicep build --file infra/bootstrap.bicep --outfile /tmp/bootstrap.json
+          az bicep build --file infra/main.bicep --outfile /tmp/main.json
+      - name: Enforce Azure cost guardrails
+        run: uv run python scripts/check-cost-guardrails.py /tmp/main.json
+      - name: Install Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v4.2.4
+      - name: Render and inspect the workload chart
+        run: |
+          helm lint deploy/charts/soffortbackend
+          helm template soffortbackend deploy/charts/soffortbackend \
+            --namespace soffortbackend > /tmp/soffortbackend.yaml
+          uv run python scripts/check-manifests.py /tmp/soffortbackend.yaml
+      - name: Validate pinned controller values
+        run: |
+          helm pull traefik --repo https://traefik.github.io/charts \
+            --version 41.2.0 --destination /tmp
+          helm pull cert-manager --repo https://charts.jetstack.io \
+            --version v1.21.1 --destination /tmp
+          uv run python -c "import pathlib,yaml; d=yaml.safe_load(pathlib.Path('deploy/flux/dev/controllers/traefik.yaml').read_text()); pathlib.Path('/tmp/traefik-values.yaml').write_text(yaml.safe_dump(d['spec']['values']))"
+          uv run python -c "import pathlib,yaml; d=yaml.safe_load(pathlib.Path('deploy/flux/dev/controllers/cert-manager.yaml').read_text()); pathlib.Path('/tmp/cert-manager-values.yaml').write_text(yaml.safe_dump(d['spec']['values']))"
+          helm template traefik /tmp/traefik-41.2.0.tgz --namespace traefik \
+            --values /tmp/traefik-values.yaml > /tmp/traefik.yaml
+          helm template cert-manager /tmp/cert-manager-v1.21.1.tgz --namespace cert-manager \
+            --values /tmp/cert-manager-values.yaml > /tmp/cert-manager.yaml
+      - name: Install pinned kubeconform
+        run: |
+          curl --fail --location --silent --show-error \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+            --output /tmp/kubeconform.tar.gz
+          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  /tmp/kubeconform.tar.gz" \
+            | sha256sum --check
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+      - name: Validate Kubernetes schemas
+        run: |
+          /tmp/kubeconform -strict -summary -ignore-missing-schemas \
+            /tmp/soffortbackend.yaml /tmp/traefik.yaml /tmp/cert-manager.yaml
+
+  container:
+    name: container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Configure Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build AMD64 and ARM64 images without publishing
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          outputs: type=cacheonly
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+

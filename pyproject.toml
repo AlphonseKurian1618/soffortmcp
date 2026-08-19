@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "soffortbackend"
+version = "0.1.0"
+description = "Production-shaped MCP hello-world resource server for soffort.com"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = { text = "MIT" }
+authors = [{ name = "Soffort" }]
+dependencies = [
+  "cryptography==50.0.0",
+  "httpx==0.28.1",
+  "mcp==2.0.0",
+  "pydantic-settings==2.15.0",
+  "pyjwt==2.13.0",
+  "uvicorn==0.52.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pip-audit==2.10.0",
+  "pyright==1.1.408",
+  "pytest==9.0.2",
+  "pytest-asyncio==1.3.0",
+  "pytest-cov==7.0.0",
+  "pyyaml==6.0.3",
+  "ruff==0.15.6",
+]
+
+[project.scripts]
+soffortbackend = "soffortbackend.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/soffortbackend"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --cov=soffortbackend --cov-report=term-missing --cov-fail-under=90"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "D", "E", "F", "I", "S", "UP"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D", "S101", "S106"]
+"tests/*.py" = ["D", "S101", "S105", "S106"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+reportUnknownMemberType = false
+venvPath = "."
+venv = ".venv"
+
+[tool.coverage.run]
+omit = [
+  "src/soffortbackend/__main__.py",
+  "src/soffortbackend/main.py",
+]

@@ -1,0 +1,20 @@
+.DS_Store
+.env
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.python-version
+.idea/
+
+# Deployment tools may render local parameter files containing tenant IDs or
+# operator email addresses. Commit only the documented examples.
+infra/parameters/*.local.json
+

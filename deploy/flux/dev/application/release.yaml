@@ -1,0 +1,40 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: soffortbackend
+  namespace: soffortbackend
+  annotations:
+    clusterconfig.azure.com/use-managed-source: "true"
+spec:
+  # The release workflow changes this to false only after publishing and
+  # scanning a real immutable image digest.
+  suspend: true
+  interval: 5m
+  timeout: 10m
+  releaseName: soffortbackend
+  chart:
+    spec:
+      chart: ./deploy/charts/soffortbackend
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: soffortbackend-dev
+        namespace: flux-system
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    image:
+      repository: ${ACR_LOGIN_SERVER}/soffortbackend
+      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    identity:
+      issuer: ${ENTRA_ISSUER}
+      jwksUrl: ${ENTRA_JWKS_URL}
+      tenantId: ${ENTRA_TENANT_ID}
+      apiAudience: ${ENTRA_API_AUDIENCE}
+      vscodeClientId: ${ENTRA_VSCODE_CLIENT_ID}
+

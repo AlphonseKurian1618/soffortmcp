@@ -1,0 +1,95 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  interval: 30m
+  timeout: 10m
+  releaseName: traefik
+  chart:
+    spec:
+      chart: traefik
+      version: 41.2.0
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+        namespace: flux-system
+      interval: 24h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    deployment:
+      replicas: 2
+    providers:
+      kubernetesIngress:
+        enabled: false
+      kubernetesGateway:
+        enabled: true
+    gateway:
+      enabled: false
+    gatewayClass:
+      enabled: false
+    api:
+      dashboard: false
+    log:
+      format: json
+      level: INFO
+    accessLog:
+      enabled: true
+      format: json
+      fields:
+        headers:
+          defaultMode: drop
+        queryParameters:
+          defaultMode: drop
+    metrics:
+      prometheus: null
+    service:
+      annotations:
+        service.beta.kubernetes.io/azure-load-balancer-resource-group: ${INGRESS_PUBLIC_IP_RESOURCE_GROUP}
+        service.beta.kubernetes.io/azure-pip-name: ${INGRESS_PUBLIC_IP_NAME}
+      spec:
+        externalTrafficPolicy: Local
+    ports:
+      web:
+        port: 8000
+        exposedPort: 80
+      websecure:
+        port: 8443
+        exposedPort: 443
+        http3:
+          enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: traefik
+            topologyKey: kubernetes.io/hostname
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault

@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+.env
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+coverage.xml
+htmlcov
+infra
+deploy
+docs
+tests
+

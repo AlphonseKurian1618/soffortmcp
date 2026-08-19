@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "soffortbackend.fullname" . }}
+  labels:
+    {{- include "soffortbackend.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "soffortbackend.selectorLabels" . | nindent 6 }}
+

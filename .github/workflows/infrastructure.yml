@@ -1,0 +1,90 @@
+name: infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply after showing the Azure What-If result
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: infrastructure-development
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: validate and deploy development Azure resources
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Sign in with the resource-group-scoped infrastructure identity
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ vars.AZURE_INFRA_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Resolve supported AKS version and approved ARM64 size
+        id: platform
+        shell: bash
+        run: |
+          version="$(az aks get-versions --location westus2 --query "values[?isDefault].version | [0]" -o tsv)"
+          size=Standard_D4pls_v6
+          available="$(az vm list-skus -l westus2 --size "${size}" --all --query "[?name=='${size}' && length(restrictions)==\`0\`].name | [0]" -o tsv)"
+          if [[ -z "${available}" ]]; then size=Standard_D4pls_v5; fi
+          echo "kubernetes-version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "node-size=${size}" >> "${GITHUB_OUTPUT}"
+      - name: Show Azure What-If
+        run: |
+          az deployment group what-if \
+            --resource-group rg-soffortbackend-dev-wus2 \
+            --template-file infra/main.bicep \
+            --parameters \
+              kubernetesVersion="${{ steps.platform.outputs.kubernetes-version }}" \
+              nodeVmSize="${{ steps.platform.outputs.node-size }}" \
+              dnsZoneResourceGroupName="${{ vars.DNS_ZONE_RESOURCE_GROUP }}" \
+              operatorObjectId="${{ vars.OPERATOR_OBJECT_ID }}" \
+              certificateEmail="${{ vars.CERTIFICATE_EMAIL }}" \
+              entraIssuer="${{ vars.ENTRA_ISSUER }}" \
+              entraJwksUrl="${{ vars.ENTRA_JWKS_URL }}" \
+              entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
+              entraApiAudience="${{ vars.ENTRA_API_AUDIENCE }}" \
+              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}" \
+              fluxSshPrivateKey="${{ secrets.FLUX_SSH_PRIVATE_KEY_B64 }}" \
+              fluxSshKnownHosts="${{ vars.FLUX_SSH_KNOWN_HOSTS_B64 }}"
+      - name: Apply reviewed Azure resources
+        if: inputs.apply
+        run: |
+          az deployment group create \
+            --name "soffortbackend-dev-${GITHUB_RUN_ID}" \
+            --resource-group rg-soffortbackend-dev-wus2 \
+            --template-file infra/main.bicep \
+            --parameters \
+              kubernetesVersion="${{ steps.platform.outputs.kubernetes-version }}" \
+              nodeVmSize="${{ steps.platform.outputs.node-size }}" \
+              dnsZoneResourceGroupName="${{ vars.DNS_ZONE_RESOURCE_GROUP }}" \
+              operatorObjectId="${{ vars.OPERATOR_OBJECT_ID }}" \
+              certificateEmail="${{ vars.CERTIFICATE_EMAIL }}" \
+              entraIssuer="${{ vars.ENTRA_ISSUER }}" \
+              entraJwksUrl="${{ vars.ENTRA_JWKS_URL }}" \
+              entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
+              entraApiAudience="${{ vars.ENTRA_API_AUDIENCE }}" \
+              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}" \
+              fluxSshPrivateKey="${{ secrets.FLUX_SSH_PRIVATE_KEY_B64 }}" \
+              fluxSshKnownHosts="${{ vars.FLUX_SSH_KNOWN_HOSTS_B64 }}"
+      - name: Publish non-secret post-deployment outputs
+        if: inputs.apply
+        run: |
+          deployment="soffortbackend-dev-${GITHUB_RUN_ID}"
+          az deployment group show -g rg-soffortbackend-dev-wus2 -n "${deployment}" \
+            --query 'properties.outputs.{acr:registryName.value,loginServer:registryLoginServer.value,releaseClientId:releaseClientId.value,lifecycleClientId:lifecycleClientId.value,ip:ingressIpAddress.value}' \
+            --output table
+          echo "Copy these outputs into the matching protected development environment variables before running release or lifecycle workflows." >> "${GITHUB_STEP_SUMMARY}"
+

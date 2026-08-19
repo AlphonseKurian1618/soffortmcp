@@ -1,0 +1,61 @@
+"""Shared fixtures for authenticated HTTP tests."""
+
+from collections.abc import AsyncIterator
+from uuid import UUID
+
+import pytest
+from mcp.server.auth.provider import AccessToken
+
+from soffortbackend.settings import Settings
+
+TENANT_ID = UUID("11111111-1111-4111-8111-111111111111")
+CLIENT_ID = UUID("22222222-2222-4222-8222-222222222222")
+
+
+class FakeTokenVerifier:
+    """Deterministic verifier used only through test dependency injection."""
+
+    ready = True
+
+    async def start(self) -> None:
+        """Provide the production lifecycle shape."""
+
+    async def close(self) -> None:
+        """Provide the production lifecycle shape."""
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """Accept one non-secret fixture token."""
+        if token != "valid-test-token":
+            return None
+        return AccessToken(
+            token=token,
+            client_id=str(CLIENT_ID),
+            scopes=["http://testserver/mcp/soffortbackend.access"],
+            expires_at=4_102_444_800,
+            resource="http://testserver/mcp",
+            subject="test-subject",
+        )
+
+
+@pytest.fixture
+def settings() -> Settings:
+    """Return a secure test-only configuration using local HTTP URLs."""
+    return Settings(
+        _env_file=None,
+        environment="test",
+        public_url="http://testserver/mcp",
+        entra_issuer="http://issuer.test/tenant/v2.0",
+        entra_jwks_url="http://issuer.test/keys",
+        entra_tenant_id=TENANT_ID,
+        entra_api_audience="api-audience",
+        entra_vscode_client_id=CLIENT_ID,
+        required_scope_uri="http://testserver/mcp/soffortbackend.access",
+        allowed_hosts_csv="testserver",
+        allowed_origins_csv="https://vscode.dev",
+    )
+
+
+@pytest.fixture
+async def fake_verifier() -> AsyncIterator[FakeTokenVerifier]:
+    """Yield the deterministic test verifier."""
+    yield FakeTokenVerifier()
