@@ -22,6 +22,9 @@ concurrency:
 jobs:
   publish:
     name: publish immutable image
+    # A fresh repository has no ACR or release identity yet. Keep this workflow
+    # inert until the reviewed Azure bootstrap publishes all three values.
+    if: vars.ACR_NAME != '' && vars.ACR_LOGIN_SERVER != '' && vars.AZURE_RELEASE_CLIENT_ID != ''
     runs-on: ubuntu-latest
     environment: development
     steps:
@@ -71,4 +74,3 @@ jobs:
             Publishes the tested multi-architecture image by immutable digest.
             Merge causes Flux to reconcile; revert this commit to roll back.
           add-paths: deploy/flux/dev/application/release.yaml
-

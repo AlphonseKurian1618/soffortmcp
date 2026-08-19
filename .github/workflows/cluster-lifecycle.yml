@@ -24,6 +24,9 @@ concurrency:
 jobs:
   lifecycle:
     name: start or cost-protect the development cluster
+    # Scheduled runs begin as soon as this file reaches main, before AKS may
+    # exist. Bootstrap sets this value only after creating the scoped identity.
+    if: vars.AZURE_LIFECYCLE_CLIENT_ID != ''
     runs-on: ubuntu-latest
     environment: development
     steps:
@@ -51,4 +54,3 @@ jobs:
           elif [[ "${action}" == "stop" && "${state}" == "Running" ]]; then
             az aks stop -g rg-soffortbackend-dev-wus2 -n aks-soffortbackend-dev-wus2 --no-wait
           fi
-

@@ -12,6 +12,7 @@
 8. Copy its ACR, release client ID, lifecycle client ID, and login-server outputs into `ACR_NAME`, `AZURE_RELEASE_CLIENT_ID`, `AZURE_LIFECYCLE_CLIENT_ID`, and `ACR_LOGIN_SERVER` development environment variables.
 
 No Apple secret or Azure service-principal secret is used. The Flux SSH key is read-only and stored only as a protected GitHub environment secret plus Azure's protected Flux configuration.
+Release and scheduled lifecycle jobs intentionally remain skipped until their scoped identity variables exist.
 
 ## Start, stop, and inspect
 
