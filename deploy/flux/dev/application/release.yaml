@@ -8,7 +8,7 @@ metadata:
 spec:
   # The release workflow changes this to false only after publishing and
   # scanning a real immutable image digest.
-  suspend: true
+  suspend: false
   interval: 5m
   timeout: 10m
   releaseName: soffortbackend
@@ -30,7 +30,7 @@ spec:
   values:
     image:
       repository: ${ACR_LOGIN_SERVER}/soffortbackend
-      digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      digest: sha256:e6ee0ef7597cf595cd2d4df7ad3322070fa1c0f0466dd9e546d9cd880acc5af6
     identity:
       issuer: ${ENTRA_ISSUER}
       jwksUrl: ${ENTRA_JWKS_URL}
