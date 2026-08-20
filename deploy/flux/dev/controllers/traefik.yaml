@@ -2,8 +2,11 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: traefik
-  namespace: traefik
+  # Reconcile with Azure managed Flux's existing deployment identity; only the
+  # rendered chart resources are installed into the target namespace.
+  namespace: flux-system
 spec:
+  targetNamespace: traefik
   interval: 30m
   timeout: 10m
   releaseName: traefik
