@@ -9,14 +9,14 @@ spec:
   listeners:
     - name: http
       protocol: HTTP
-      port: 80
+      port: {{ .Values.gateway.httpListenerPort }}
       hostname: {{ .Values.gateway.hostname }}
       allowedRoutes:
         namespaces:
           from: Same
     - name: https
       protocol: HTTPS
-      port: 443
+      port: {{ .Values.gateway.httpsListenerPort }}
       hostname: {{ .Values.gateway.hostname }}
       tls:
         mode: Terminate
@@ -44,6 +44,8 @@ spec:
         - type: RequestRedirect
           requestRedirect:
             scheme: https
+            # Listener ports are internal; clients must receive the public TLS port.
+            port: 443
             statusCode: 308
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -80,4 +82,3 @@ spec:
       backendRefs:
         - name: {{ include "soffortbackend.fullname" . }}
           port: {{ .Values.service.port }}
-
