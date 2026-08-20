@@ -175,9 +175,11 @@ resource registry 'Microsoft.ContainerRegistry/registries@2025-11-01' = {
     dataEndpointEnabled: false
     publicNetworkAccess: 'Enabled'
     policies: {
-      exportPolicy: {
-        status: 'disabled'
-      }
+      // Azure permits disabling export only when public network access is also
+      // disabled. Development releases use GitHub-hosted runners, so keep the
+      // Basic registry public while relying on Entra/OIDC and disabled admin
+      // and anonymous access. Production will move builds onto private-origin
+      // infrastructure before disabling the registry export policy.
       quarantinePolicy: {
         status: 'disabled'
       }
