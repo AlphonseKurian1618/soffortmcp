@@ -4,9 +4,8 @@
       "type": "http",
       "url": "https://soffort.com/mcp",
       "oauth": {
-        "clientId": "REPLACE_WITH_ENTRA_PUBLIC_CLIENT_ID"
+        "clientId": "9cea70e5-8b4c-4f37-bf6f-2d789ae49492"
       }
     }
   }
 }
-

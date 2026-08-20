@@ -49,16 +49,13 @@ jobs:
             --parameters \
               kubernetesVersion="${{ steps.platform.outputs.kubernetes-version }}" \
               nodeVmSize="${{ steps.platform.outputs.node-size }}" \
-              dnsZoneResourceGroupName="${{ vars.DNS_ZONE_RESOURCE_GROUP }}" \
               operatorObjectId="${{ vars.OPERATOR_OBJECT_ID }}" \
               certificateEmail="${{ vars.CERTIFICATE_EMAIL }}" \
               entraIssuer="${{ vars.ENTRA_ISSUER }}" \
               entraJwksUrl="${{ vars.ENTRA_JWKS_URL }}" \
               entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
               entraApiAudience="${{ vars.ENTRA_API_AUDIENCE }}" \
-              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}" \
-              fluxSshPrivateKey="${{ secrets.FLUX_SSH_PRIVATE_KEY_B64 }}" \
-              fluxSshKnownHosts="${{ vars.FLUX_SSH_KNOWN_HOSTS_B64 }}"
+              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}"
       - name: Apply reviewed Azure resources
         if: inputs.apply
         run: |
@@ -69,16 +66,13 @@ jobs:
             --parameters \
               kubernetesVersion="${{ steps.platform.outputs.kubernetes-version }}" \
               nodeVmSize="${{ steps.platform.outputs.node-size }}" \
-              dnsZoneResourceGroupName="${{ vars.DNS_ZONE_RESOURCE_GROUP }}" \
               operatorObjectId="${{ vars.OPERATOR_OBJECT_ID }}" \
               certificateEmail="${{ vars.CERTIFICATE_EMAIL }}" \
               entraIssuer="${{ vars.ENTRA_ISSUER }}" \
               entraJwksUrl="${{ vars.ENTRA_JWKS_URL }}" \
               entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
               entraApiAudience="${{ vars.ENTRA_API_AUDIENCE }}" \
-              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}" \
-              fluxSshPrivateKey="${{ secrets.FLUX_SSH_PRIVATE_KEY_B64 }}" \
-              fluxSshKnownHosts="${{ vars.FLUX_SSH_KNOWN_HOSTS_B64 }}"
+              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}"
       - name: Publish non-secret post-deployment outputs
         if: inputs.apply
         run: |
@@ -87,4 +81,3 @@ jobs:
             --query 'properties.outputs.{acr:registryName.value,loginServer:registryLoginServer.value,releaseClientId:releaseClientId.value,lifecycleClientId:lifecycleClientId.value,ip:ingressIpAddress.value}' \
             --output table
           echo "Copy these outputs into the matching protected development environment variables before running release or lifecycle workflows." >> "${GITHUB_STEP_SUMMARY}"
-
