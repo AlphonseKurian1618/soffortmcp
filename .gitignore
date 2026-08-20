@@ -1,6 +1,11 @@
 .DS_Store
 .env
 .venv/
+
+# Apple Sign in with Apple private keys are one-time-download credentials. They
+# belong only in the Entra provider configuration, never in this repository.
+*.p8
+
 .pytest_cache/
 .ruff_cache/
 .coverage
@@ -17,4 +22,3 @@ build/
 # Deployment tools may render local parameter files containing tenant IDs or
 # operator email addresses. Commit only the documented examples.
 infra/parameters/*.local.json
-

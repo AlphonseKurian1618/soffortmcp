@@ -21,14 +21,37 @@ Use the exact `issuer` and `jwks_uri` returned by the tenant's OpenID Connect me
 
 ## Compatibility gate
 
-1. Fetch the API's RFC 9728 metadata without a token.
-2. Connect from the current stable VS Code desktop using `.vscode/mcp.json`.
-3. Confirm the browser offers only Apple and completes PKCE using the loopback redirect.
-4. Decode the access-token header and claims locally without recording the token. Confirm RS256, exact issuer, API audience, tenant, VS Code authorized party, and `soffortbackend.access`.
+1. Before AKS exists, run `uv run scripts/test-identity-pkce.py`. Open the printed URL in
+   Safari and complete Apple sign-in. The probe keeps the authorization code and tokens in
+   memory, validates PKCE, the MCP resource parameter, the JWT signature and claims, and prints
+   only non-identifying booleans.
+2. Fetch the deployed API's RFC 9728 metadata without a token.
+3. Connect from the current stable VS Code desktop using `.vscode/mcp.json`.
+4. Confirm the browser offers only Apple and completes PKCE using the loopback redirect.
 5. Confirm `tools/list` shows only `hello_world` and a call returns the documented result.
 6. Repeat through `vscode.dev`, including hidden-email, cancellation, returning login, and reconnect cases.
 
 If Entra rejects the MCP resource parameter or VS Code cannot request the configured scope, stop the release. Record sanitized HTTP status, parameter names, and Entra correlation IDs; do not implement an OAuth proxy in the server.
+
+### Development gate result (2026-08-19)
+
+The repeatable PKCE probe passed the protocol checks against the configured External ID tenant:
+
+- RS256 signature, exact issuer, API audience, tenant, and VS Code authorized-party claims
+- `soffortbackend.access` delegated permission
+- PKCE S256 and the MCP `resource=https://soffort.com/mcp` parameter
+- authorization-code exchange and refresh-token issuance
+
+The managed Entra Apple experience did **not** pass two product-policy checks:
+
+- The initial Entra page still displayed an email-address sign-in path even after Microsoft Graph
+  reported Apple as the flow's only identity provider.
+- Apple's first-login sheet requested name and email. The Entra built-in Apple-provider form has no
+  scope control, so making the flow email attribute optional does not prevent that upstream request.
+
+Do not provision AKS from this development branch until the owner explicitly accepts both managed
+provider behaviors or selects a different standards-compliant authorization service. Do not hide the
+email option with CSS and do not add a hand-written OAuth server.
 
 ## Credential renewal
 
