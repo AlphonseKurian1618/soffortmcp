@@ -35,8 +35,11 @@ gateway:
   hostname: soffort.com
   className: traefik
   tlsSecretName: soffort-com-tls
+  # Gateway listeners bind Traefik's internal entrypoint ports. The Azure
+  # LoadBalancer Service exposes these externally as standard ports 80/443.
+  httpListenerPort: 8000
+  httpsListenerPort: 8443
 
 rateLimit:
   average: 60
   burst: 20
-

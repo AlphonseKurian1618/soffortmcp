@@ -54,6 +54,15 @@ def validate(documents: list[dict[str, Any]]) -> list[str]:
         violations.append("PDB must keep one replica available")
     if "NetworkPolicy" not in by_kind:
         violations.append("NetworkPolicy is missing")
+    gateway = by_kind.get("Gateway", {})
+    listener_ports = {
+        listener.get("name"): listener.get("port")
+        for listener in gateway.get("spec", {}).get("listeners", [])
+    }
+    # Traefik's Service maps public 80/443 to these internal entrypoints. A
+    # Gateway using the public ports is rejected by Traefik as PortUnavailable.
+    if listener_ports != {"http": 8000, "https": 8443}:
+        violations.append("Gateway listeners must match Traefik entrypoints 8000/8443")
     return violations
 
 

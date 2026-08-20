@@ -52,11 +52,13 @@
     "gateway": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["hostname", "className", "tlsSecretName"],
+      "required": ["hostname", "className", "tlsSecretName", "httpListenerPort", "httpsListenerPort"],
       "properties": {
         "hostname": { "type": "string", "const": "soffort.com" },
         "className": { "type": "string", "const": "traefik" },
-        "tlsSecretName": { "type": "string", "minLength": 1 }
+        "tlsSecretName": { "type": "string", "minLength": 1 },
+        "httpListenerPort": { "type": "integer", "const": 8000 },
+        "httpsListenerPort": { "type": "integer", "const": 8443 }
       }
     },
     "rateLimit": {
@@ -70,4 +72,3 @@
     }
   }
 }
-
