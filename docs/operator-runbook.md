@@ -6,7 +6,7 @@
 2. Authenticate `az` to subscription `86dfb8ca-2e38-4abb-9072-e8d077af295a` and authenticate `gh` as a repository administrator.
 3. Run `./scripts/preflight.sh` and address every SKU, identity, or AKS-version failure.
 4. Run `./scripts/bootstrap-azure.sh --budget-email <operator-email>`. This creates the development resource group, budget, and scoped GitHub OIDC identity. Flux reads the public repository over HTTPS and needs no deploy key.
-5. Authenticate Azure CLI to the External ID tenant and run `python scripts/bootstrap-identity.py --tenant-id <external-tenant-guid> --tenant-subdomain <ciam-subdomain> --github-repository AlphonseKurian1618/soffortmcp`. This writes the non-secret identity outputs to protected GitHub environment variables; finish the Apple-only portal steps in `docs/identity-runbook.md`.
+5. Authenticate Azure CLI to the External ID tenant and run `python scripts/bootstrap-identity.py --tenant-id <external-tenant-guid> --tenant-subdomain <ciam-subdomain> --github-repository AlphonseKurian1618/soffortmcp`. This writes the non-secret identity outputs to protected GitHub environment variables; finish the Apple and Email OTP user-flow steps in `docs/identity-runbook.md`.
 6. Confirm `OPERATOR_OBJECT_ID` in the GitHub development environment matches the value reported by `scripts/preflight.sh`.
 7. Run the infrastructure workflow with `apply=false`, review What-If, then rerun with `apply=true` after environment approval.
 8. Copy its ACR, release client ID, lifecycle client ID, and login-server outputs into `ACR_NAME`, `AZURE_RELEASE_CLIENT_ID`, `AZURE_LIFECYCLE_CLIENT_ID`, and `ACR_LOGIN_SERVER` development environment variables.
@@ -49,7 +49,9 @@ curl --include --request POST https://soffort.com/mcp \
 
 The metadata request must return 200 and canonical resource `https://soffort.com/mcp`. The unauthenticated MCP request must return 401 with `WWW-Authenticate` pointing to that metadata. `/livez` and `/readyz` must not be publicly routed.
 
-Complete the real VS Code/Apple gate before unsuspending the first application release. Run `scripts/load-test.py` only with a short-lived development token in a local shell; shell history and logs must not retain it.
+Complete the real VS Code Apple and Email OTP gates before unsuspending the first application
+release. Run `scripts/load-test.py` only with a short-lived development token in a local shell;
+shell history and logs must not retain it.
 
 ## Incidents and cost
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Exercise the Entra/Apple authorization-code flow without exposing credentials.
+"""Exercise Entra Apple or email-OTP authorization without exposing credentials.
 
 This operator probe verifies the part of the MCP login flow that can be tested
 before AKS exists: Entra must accept PKCE plus the MCP ``resource`` parameter,
-federate the browser to Apple, and issue an audience-bound delegated API token.
-The authorization code, access token, refresh token, Apple subject, and email are
-kept in memory and are never printed.
+authenticate through the selected user-flow method, and issue an audience-bound
+delegated API token. Authorization codes, tokens, subjects, and email addresses
+are kept in memory and are never printed.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ import jwt
 from jwt import PyJWK
 
 DEFAULT_TENANT_ID = "85685fcd-3fc0-4032-982c-92ddd6efc37b"
+DEFAULT_TENANT_DOMAIN = "soffortcustomers.onmicrosoft.com"
 DEFAULT_CLIENT_ID = "9cea70e5-8b4c-4f37-bf6f-2d789ae49492"
 DEFAULT_AUDIENCE = "387b7862-7ab6-4139-af73-b54f535ded29"
 DEFAULT_RESOURCE = "https://soffort.com/mcp"
@@ -69,6 +70,35 @@ def form_post(url: str, fields: dict[str, str]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeError("Token endpoint returned a non-object JSON value")
     return cast(dict[str, Any], payload)
+
+
+def load_oidc_metadata(tenant_domain: str, client_id: str) -> dict[str, str]:
+    """Load and validate the public External ID OIDC endpoint metadata.
+
+    External ID intentionally publishes a friendly tenant host for browser and
+    token endpoints while tokens use a tenant-ID host in their ``iss`` claim.
+    Consuming discovery preserves that supported distinction instead of
+    assuming every endpoint can be derived from the issuer string.
+    """
+    discovery_url = (
+        f"https://{tenant_domain.removesuffix('.onmicrosoft.com')}.ciamlogin.com/"
+        f"{tenant_domain}/v2.0/.well-known/openid-configuration?"
+        f"{urllib.parse.urlencode({'appid': client_id})}"
+    )
+    with urllib.request.urlopen(discovery_url, timeout=15) as response:  # noqa: S310
+        raw_metadata = cast(object, json.load(response))
+    if not isinstance(raw_metadata, dict):
+        raise RuntimeError("OIDC discovery returned a non-object JSON value")
+    metadata_object = cast(dict[str, object], raw_metadata)
+
+    required = ("authorization_endpoint", "token_endpoint", "jwks_uri", "issuer")
+    metadata: dict[str, str] = {}
+    for key in required:
+        value = metadata_object.get(key)
+        if not isinstance(value, str) or not value.startswith("https://"):
+            raise RuntimeError(f"OIDC discovery did not publish a valid {key}")
+        metadata[key] = value
+    return metadata
 
 
 def receive_callback(redirect_uri: str, expected_state: str, timeout_seconds: int) -> str:
@@ -144,14 +174,15 @@ def verify_access_token(
     if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
         raise RuntimeError("Entra JWKS response has an unexpected shape")
     keys = cast(list[object], jwks["keys"])
-    matching = [
-        raw_key
-        for raw_key in keys
-        if isinstance(raw_key, dict) and raw_key.get("kid") == header["kid"]
-    ]
+    # Narrow the untyped JSON keys explicitly so Pyright can prove the value
+    # passed into PyJWK is a JSON object rather than an arbitrary object.
+    matching: list[dict[str, Any]] = []
+    for raw_key in keys:
+        if isinstance(raw_key, dict) and raw_key.get("kid") == header["kid"]:
+            matching.append(cast(dict[str, Any], raw_key))
     if len(matching) != 1:
         raise RuntimeError("The token signing key was not uniquely present in Entra JWKS")
-    signing_key = PyJWK.from_dict(cast(dict[str, Any], matching[0]), algorithm="RS256")
+    signing_key = PyJWK.from_dict(matching[0], algorithm="RS256")
 
     claims = jwt.decode(
         token,
@@ -183,22 +214,29 @@ def verify_access_token(
 
 
 def main() -> int:
-    """Run one interactive Apple sign-in and print a sanitized result."""
+    """Run one interactive Entra sign-in and print a sanitized result."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--tenant-id", default=DEFAULT_TENANT_ID)
+    parser.add_argument("--tenant-domain", default=DEFAULT_TENANT_DOMAIN)
     parser.add_argument("--client-id", default=DEFAULT_CLIENT_ID)
     parser.add_argument("--audience", default=DEFAULT_AUDIENCE)
     parser.add_argument("--resource", default=DEFAULT_RESOURCE)
     parser.add_argument("--scope", default=DEFAULT_SCOPE)
     parser.add_argument("--redirect-uri", default=DEFAULT_REDIRECT_URI)
+    parser.add_argument(
+        "--sign-in-method",
+        choices=("apple", "email"),
+        default="apple",
+        help="The provider the operator must choose in the browser.",
+    )
     parser.add_argument("--timeout-seconds", type=int, default=300)
     args = parser.parse_args()
 
-    base = f"https://{args.tenant_id}.ciamlogin.com/{args.tenant_id}"
-    issuer = f"{base}/v2.0"
-    authorization_endpoint = f"{base}/oauth2/v2.0/authorize"
-    token_endpoint = f"{base}/oauth2/v2.0/token"
-    jwks_url = f"{base}/discovery/v2.0/keys"
+    metadata = load_oidc_metadata(args.tenant_domain, args.client_id)
+    issuer = metadata["issuer"]
+    authorization_endpoint = metadata["authorization_endpoint"]
+    token_endpoint = metadata["token_endpoint"]
+    jwks_url = metadata["jwks_uri"]
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
     challenge = base64url(hashlib.sha256(verifier.encode("ascii")).digest())
@@ -219,7 +257,11 @@ def main() -> int:
         )
     }"
 
-    print("Open this authorization URL in Safari and complete Sign in with Apple:")
+    instruction = {
+        "apple": "choose Sign in with Apple",
+        "email": "enter an email address and complete its one-time passcode",
+    }[args.sign_in_method]
+    print(f"Open this authorization URL in Safari and {instruction}:")
     print(authorization_url)
     print("Waiting for the loopback callback; no code or token will be logged.", flush=True)
     code = receive_callback(args.redirect_uri, state, args.timeout_seconds)
@@ -250,6 +292,11 @@ def main() -> int:
     report["pkce_s256"] = True
     report["mcp_resource_parameter_accepted"] = True
     report["refresh_token_issued"] = isinstance(response.get("refresh_token"), str)
+    # The requested method is an operator assertion, not a token claim. Run
+    # each provider test in a fresh private-browser session so cached Entra
+    # state cannot silently satisfy the authorization request through another
+    # provider.
+    report["requested_sign_in_method"] = args.sign_in_method
     print(json.dumps(report, indent=2))
     return 0
 

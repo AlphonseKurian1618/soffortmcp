@@ -2,7 +2,9 @@
 
 `soffortbackend` is a small, production-shaped [Model Context Protocol](https://modelcontextprotocol.io/) resource server. It publishes one authenticated `hello_world` tool at `https://soffort.com/mcp` and is designed to run as a stateless, horizontally scalable workload in Azure Kubernetes Service (AKS).
 
-Apple is the upstream sign-in method in Microsoft Entra External ID. The server accepts only short-lived Entra API access tokens; it never receives Apple ID tokens, Apple access tokens, or the Apple private key.
+Apple and passwordless email one-time passcodes are the sign-in methods in Microsoft Entra
+External ID. The server accepts only short-lived Entra API access tokens; it never receives Apple
+tokens, the Apple private key, an email OTP, or an end-user password.
 
 ## API contract
 
@@ -43,11 +45,14 @@ There is intentionally no local authentication bypass. Unit tests inject a deter
 1. Create or select a Microsoft Entra External ID tenant.
 2. Run `scripts/bootstrap-identity.py` interactively as an administrator. It creates the API and public-client registrations idempotently and prints non-secret deployment outputs.
 3. In Apple Developer, create the primary App ID, Services ID, Sign in with Apple key, and register the exact federation return URL displayed by Entra.
-4. Configure Apple as the only identity provider in the External ID user flow and associate `soffortbackend-vscode` with that flow.
+4. Configure Apple and Email One Time Passcode in the External ID user flow, enable open
+   self-service registration, and associate `soffortbackend-vscode` with that flow.
 5. Upload or derive Apple material only through the Entra administration flow. Never copy the `.p8` file into this repository, AKS, GitHub Actions, or chat.
 6. Grant the VS Code public client admin consent to `soffortbackend.access` and perform the VS Code OAuth compatibility gate described in `docs/identity-runbook.md`.
 
-Apple federation configuration is intentionally not hidden behind application code. Microsoft Entra owns the Apple callback and issues the audience-bound access token that this service verifies.
+Upstream authentication is intentionally not hidden behind application code. Microsoft Entra owns
+the Apple callback and email-code verification, then issues the audience-bound access token that
+this service verifies.
 
 ## Azure deployment
 
@@ -68,7 +73,9 @@ See `docs/operator-runbook.md` for start/stop, deployment, rollback, DNS, TLS, a
 
 ## VS Code
 
-After identity bootstrap, replace `REPLACE_WITH_ENTRA_PUBLIC_CLIENT_ID` in `.vscode/mcp.json` with the generated non-secret public client ID. VS Code 1.123 or later opens the browser for Apple sign-in on first use.
+After identity bootstrap, replace `REPLACE_WITH_ENTRA_PUBLIC_CLIENT_ID` in `.vscode/mcp.json` with
+the generated non-secret public client ID. VS Code 1.123 or later opens the browser for Apple or
+verified-email sign-in on first use.
 
 The real compatibility test is a release gate: if current VS Code cannot request an Entra token with the expected resource, audience, and scope, do not add an in-process OAuth proxy. Record the failing request/response metadata without tokens and revisit the managed identity-provider choice.
 

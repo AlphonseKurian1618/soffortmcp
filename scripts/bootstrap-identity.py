@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Idempotently create the two Entra External ID application registrations.
 
-Apple Developer configuration and the External ID Apple-only user flow remain
+Apple Developer configuration and the External ID Apple-plus-email user flow remain
 explicit portal operations because they require the one-time Apple private key
 and tenant-specific federation callback. This script never accepts that key.
 """
@@ -282,7 +282,7 @@ def main() -> int:
                 ],
                 check=True,
             )
-    print("Complete the Apple-only user flow manually using docs/identity-runbook.md.")
+    print("Complete the Apple and Email OTP user flow using docs/identity-runbook.md.")
     return 0
 
 
