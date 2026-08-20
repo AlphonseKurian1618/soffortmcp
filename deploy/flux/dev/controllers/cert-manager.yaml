@@ -14,7 +14,6 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: jetstack
-        namespace: flux-system
       interval: 24h
   install:
     crds: CreateReplace
@@ -45,4 +44,3 @@ spec:
       replicaCount: 2
     cainjector:
       replicaCount: 1
-
