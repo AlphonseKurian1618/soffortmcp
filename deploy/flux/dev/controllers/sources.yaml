@@ -2,9 +2,9 @@ apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
   name: traefik
-  # Azure's managed Flux extension disables cross-namespace references. Keep
-  # each chart source beside the HelmRelease that is allowed to consume it.
-  namespace: traefik
+  # Azure managed Flux disables cross-namespace source references. Keep the
+  # source and release together in its existing deployment namespace.
+  namespace: flux-system
 spec:
   interval: 24h
   timeout: 60s
@@ -14,7 +14,7 @@ apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
   name: jetstack
-  namespace: cert-manager
+  namespace: flux-system
 spec:
   interval: 24h
   timeout: 60s

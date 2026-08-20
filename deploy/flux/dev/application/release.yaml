@@ -2,10 +2,13 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: soffortbackend
-  namespace: soffortbackend
+  namespace: flux-system
   annotations:
     clusterconfig.azure.com/use-managed-source: "true"
 spec:
+  # The chart runs in soffortbackend, while reconciliation uses Azure managed
+  # Flux's pre-existing deployment identity instead of adding runtime RBAC.
+  targetNamespace: soffortbackend
   # The release workflow changes this to false only after publishing and
   # scanning a real immutable image digest.
   suspend: false
@@ -19,7 +22,6 @@ spec:
       sourceRef:
         kind: GitRepository
         name: soffortbackend-dev
-        namespace: flux-system
   install:
     remediation:
       retries: 3
@@ -37,4 +39,3 @@ spec:
       tenantId: ${ENTRA_TENANT_ID}
       apiAudience: ${ENTRA_API_AUDIENCE}
       vscodeClientId: ${ENTRA_VSCODE_CLIENT_ID}
-
