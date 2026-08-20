@@ -51,7 +51,7 @@ Apple federation configuration is intentionally not hidden behind application co
 
 ## Azure deployment
 
-The development topology uses West US 2, AKS Free management tier, two scheduled PAYG ARM64 nodes, ACR Basic, direct Traefik ingress, cert-manager, and Flux. It deliberately excludes Azure Front Door, WAF, NAT Gateway, databases, and paid monitoring.
+The development topology uses West US 2, AKS Free management tier, two scheduled PAYG ARM64 nodes, ACR Basic, direct Traefik ingress, cert-manager, and Flux. GoDaddy remains authoritative for `soffort.com`; deployment outputs the static ingress IP for a manual apex `A` record. It deliberately excludes Azure Front Door, WAF, NAT Gateway, databases, and paid monitoring.
 
 Deployment sequence:
 

@@ -13,9 +13,6 @@ param kubernetesVersion string
 @description('ARM64 system-node SKU. No other size is permitted in development.')
 param nodeVmSize string = 'Standard_D4pls_v6'
 
-@description('Resource group containing the existing soffort.com Azure DNS zone.')
-param dnsZoneResourceGroupName string
-
 @description('Azure/Entra object ID of the human development operator.')
 param operatorObjectId string
 
@@ -36,13 +33,6 @@ param entraApiAudience string
 
 @description('VS Code public-client ID expected in azp/appid.')
 param entraVscodeClientId string
-
-@secure()
-@description('Base64-encoded read-only GitHub deploy private key consumed by the Flux extension.')
-param fluxSshPrivateKey string
-
-@description('Base64-encoded pinned github.com SSH host keys.')
-param fluxSshKnownHosts string
 
 var application = 'soffortbackend'
 var environment = 'development'
@@ -409,14 +399,6 @@ resource lifecycleClusterContributor 'Microsoft.Authorization/roleAssignments@20
   }
 }
 
-module dnsRecords './modules/dns-record.bicep' = {
-  name: 'dns-soffortbackend-dev'
-  scope: resourceGroup(dnsZoneResourceGroupName)
-  params: {
-    ingressIpAddress: ingressPublicIp.properties.ipAddress
-  }
-}
-
 resource fluxExtension 'Microsoft.KubernetesConfiguration/extensions@2024-11-01' = {
   name: 'flux'
   scope: cluster
@@ -441,16 +423,14 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
     sourceKind: 'GitRepository'
     suspend: false
     waitForReconciliation: false
-    configurationProtectedSettings: {
-      sshPrivateKey: fluxSshPrivateKey
-    }
     gitRepository: {
-      url: 'ssh://git@github.com/${repository}.git'
+      // The repository is public. HTTPS read access removes a durable Flux SSH
+      // secret; all writes still require GitHub OIDC and protected pull requests.
+      url: 'https://github.com/${repository}.git'
       provider: 'Generic'
       repositoryRef: {
         branch: 'main'
       }
-      sshKnownHosts: fluxSshKnownHosts
       syncIntervalInSeconds: 60
       timeoutInSeconds: 60
     }

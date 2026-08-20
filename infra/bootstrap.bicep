@@ -6,9 +6,6 @@ param location string = 'westus2'
 @description('Dedicated development resource group.')
 param resourceGroupName string = 'rg-soffortbackend-dev-wus2'
 
-@description('Resource group containing the existing soffort.com Azure DNS zone.')
-param dnsZoneResourceGroupName string
-
 @description('Email addresses that receive actual and forecast budget alerts.')
 @minLength(1)
 param budgetContactEmails array
@@ -32,15 +29,6 @@ module resourceGroupBootstrap './modules/bootstrap-resource-group.bicep' = {
   scope: developmentResourceGroup
   params: {
     location: location
-  }
-}
-
-module dnsAccess './modules/dns-access.bicep' = {
-  name: 'soffortbackend-bootstrap-dns-access'
-  scope: resourceGroup(dnsZoneResourceGroupName)
-  params: {
-    principalId: resourceGroupBootstrap.outputs.infrastructurePrincipalId
-    principalResourceId: resourceGroupBootstrap.outputs.infrastructureResourceId
   }
 }
 

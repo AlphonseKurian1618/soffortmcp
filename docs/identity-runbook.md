@@ -17,6 +17,8 @@ The identity bootstrap creates `soffortbackend-api` with Application ID URI `htt
 
 Configure the Apple identity provider and user flow in the External ID portal. Register the federation callback displayed by Entra in Apple Developer; it is an Entra `ciamlogin.com` URL, not `https://soffort.com/mcp`. Offer Apple only, enable self-service signup, request no name/email scope, associate the VS Code app, and grant admin consent to the API permission.
 
+Use the exact `issuer` and `jwks_uri` returned by the tenant's OpenID Connect metadata. External ID may accept the friendly tenant subdomain for browser authorization while emitting the tenant-ID hostname in the token `iss` claim; the resource server deliberately validates the emitted value exactly.
+
 ## Compatibility gate
 
 1. Fetch the API's RFC 9728 metadata without a token.
@@ -31,4 +33,3 @@ If Entra rejects the MCP resource parameter or VS Code cannot request the config
 ## Credential renewal
 
 Create a calendar/operations ticket at least 30 days before the Apple federation credential expires. Add the new credential in Entra, test first-time and returning login, then retire the old credential. The workload requires no restart because it has no Apple credential.
-

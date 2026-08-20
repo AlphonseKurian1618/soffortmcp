@@ -244,7 +244,10 @@ def main() -> int:
     grant_admin_consent(graph, api_principal, client_principal)
     update_vscode(client_app["appId"])
 
-    base = f"https://{args.tenant_subdomain}.ciamlogin.com/{args.tenant_id}"
+    # External ID accepts the friendly tenant subdomain for authorization, but
+    # its OIDC metadata emits the tenant-ID hostname as the canonical ``iss``.
+    # Token verification must use that byte-for-byte value or valid tokens fail.
+    base = f"https://{args.tenant_id}.ciamlogin.com/{args.tenant_id}"
     output = {
         "ENTRA_ISSUER": f"{base}/v2.0",
         "ENTRA_JWKS_URL": f"{base}/discovery/v2.0/keys",
