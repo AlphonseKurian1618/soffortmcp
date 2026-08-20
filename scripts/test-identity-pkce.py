@@ -241,21 +241,23 @@ def main() -> int:
     verifier = secrets.token_urlsafe(64)
     challenge = base64url(hashlib.sha256(verifier.encode("ascii")).digest())
     requested_scope = f"openid offline_access {args.scope}"
-    authorization_url = f"{authorization_endpoint}?{
-        urllib.parse.urlencode(
-            {
-                'client_id': args.client_id,
-                'response_type': 'code',
-                'redirect_uri': args.redirect_uri,
-                'response_mode': 'query',
-                'scope': requested_scope,
-                'resource': args.resource,
-                'code_challenge': challenge,
-                'code_challenge_method': 'S256',
-                'state': state,
-            }
-        )
-    }"
+    authorization_fields = {
+        "client_id": args.client_id,
+        "response_type": "code",
+        "redirect_uri": args.redirect_uri,
+        "response_mode": "query",
+        "scope": requested_scope,
+        "resource": args.resource,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "state": state,
+    }
+    if args.sign_in_method == "apple":
+        # External ID's supported issuer acceleration bypasses the provider
+        # picker. This is also deterministic: a cached local-account session
+        # cannot accidentally turn an Apple compatibility test into email OTP.
+        authorization_fields["domain_hint"] = "apple"
+    authorization_url = f"{authorization_endpoint}?{urllib.parse.urlencode(authorization_fields)}"
 
     instruction = {
         "apple": "choose Sign in with Apple",

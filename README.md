@@ -67,15 +67,16 @@ az account set --subscription 86dfb8ca-2e38-4abb-9072-e8d077af295a
 ./scripts/bootstrap-azure.sh --budget-email you@example.com
 ```
 
-The infrastructure workflow never reaches the private Kubernetes API. Flux reads the private Git repository and reconciles `deploy/flux/dev`; GitHub Actions builds and scans an immutable image, then opens a digest-only deployment pull request.
+The infrastructure workflow never reaches the private Kubernetes API. Flux reads this public Git
+repository over HTTPS and reconciles `deploy/flux/dev`; GitHub Actions builds and scans an
+immutable image, then opens a digest-only deployment pull request.
 
-See `docs/operator-runbook.md` for start/stop, deployment, rollback, DNS, TLS, and incident procedures. Current development infrastructure has no control-plane SLA and is intentionally unavailable whenever the cluster is stopped.
+See `docs/operator-runbook.md` for start/stop, deployment, rollback, DNS, TLS, and incident procedures. Use `docs/e2e-test-runbook.md` for the complete authenticated VS Code acceptance test. Current development infrastructure has no control-plane SLA and is intentionally unavailable whenever the cluster is stopped.
 
 ## VS Code
 
-After identity bootstrap, replace `REPLACE_WITH_ENTRA_PUBLIC_CLIENT_ID` in `.vscode/mcp.json` with
-the generated non-secret public client ID. VS Code 1.123 or later opens the browser for Apple or
-verified-email sign-in on first use.
+The committed `.vscode/mcp.json` contains the generated non-secret public client ID. VS Code 1.123
+or later opens the browser for managed External ID authentication on first use.
 
 The real compatibility test is a release gate: if current VS Code cannot request an Entra token with the expected resource, audience, and scope, do not add an in-process OAuth proxy. Record the failing request/response metadata without tokens and revisit the managed identity-provider choice.
 

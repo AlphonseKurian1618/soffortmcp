@@ -38,7 +38,7 @@ Use the exact `issuer` and `jwks_uri` returned by the tenant's OpenID Connect me
 
 If Entra rejects the MCP resource parameter or VS Code cannot request the configured scope, stop the release. Record sanitized HTTP status, parameter names, and Entra correlation IDs; do not implement an OAuth proxy in the server.
 
-### Development gate result (2026-08-19)
+### Development gate result (2026-08-20)
 
 The repeatable PKCE probe passed the protocol checks against the configured External ID tenant:
 
@@ -52,8 +52,13 @@ active `soffortbackend_apple_email_v2` flow with both Apple and `EmailOtpSignup-
 for the local OTP path, self-signup enabled, and only `soffortbackend-vscode` associated. The earlier
 flow remains unassociated as a rollback artifact and must not be treated as active configuration.
 
-The fresh interactive compatibility test is currently **blocked**. Entra returns `AADSTS50058`
-before rendering an identity provider. The result reproduced with:
+Fresh Apple authentication now passes when the probe includes Microsoft's documented issuer
+acceleration parameter `domain_hint=apple`. The 2026-08-20 run reached the native Apple sheet and
+then passed the complete token validation list above. Apple authentication can therefore be used
+for the VS Code MCP acceptance path.
+
+The generic hosted provider page and email OTP path remain **blocked**. Entra returns `AADSTS50058`
+before rendering a provider. The result reproduced with:
 
 - Safari and a separate clean browser context;
 - no prompt, `prompt=login`, `prompt=select_account`, and `prompt=create`;
@@ -61,21 +66,19 @@ before rendering an identity provider. The result reproduced with:
 - Apple-only, Email-OTP-only, and combined provider configurations; and
 - a freshly created, documented-schema user flow.
 
-A cached Apple customer session had previously completed PKCE and produced a conforming API token,
-so token issuance, audience, delegated scope, PKCE, and the MCP resource parameter have passed. A
-fresh user cannot currently reach either provider, so Email OTP and first-time Apple registration
-have not passed. Preserve the combined flow and stop before AKS provisioning. Resolve the hosted
-Entra flow error through a successful portal "Run user flow" test or Microsoft support, then rerun
-both probe modes and real VS Code desktop/`vscode.dev` before changing this gate.
+A fresh user can reach Apple directly, but cannot currently reach email OTP through the managed
+picker. Preserve the combined flow and do not claim email E2E support until the portal "Run user
+flow" test or Microsoft support resolves the hosted page. The Apple path is sufficient to continue
+the cost-capped development deployment and real VS Code gate; email remains a separately recorded
+acceptance failure.
 
 The managed Entra Apple experience retains one product-policy exception:
 
 - Apple's first-login sheet requested name and email. The Entra built-in Apple-provider form has no
   scope control, so the user-flow attribute configuration does not prevent that upstream request.
 
-Do not provision AKS from this development branch until fresh Apple and Email OTP PKCE succeed and
-the owner explicitly accepts the remaining managed Apple scope behavior or removes Apple. Do not
-hide provider behavior with CSS and do not add a hand-written OAuth server.
+Do not promote beyond the Apple-authenticated development path until Email OTP PKCE succeeds. Do
+not hide provider behavior with CSS and do not add a hand-written OAuth server.
 
 ## Credential renewal
 
