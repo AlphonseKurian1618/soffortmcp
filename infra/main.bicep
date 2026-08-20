@@ -437,7 +437,7 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
       timeoutInSeconds: 60
     }
     kustomizations: {
-      gatewayApi: {
+      'gateway-api': {
         path: './deploy/flux/dev/gateway-api'
         prune: true
         force: false
@@ -449,7 +449,7 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
       controllers: {
         path: './deploy/flux/dev/controllers'
         dependsOn: [
-          'gatewayApi'
+          'gateway-api'
         ]
         prune: true
         force: false
