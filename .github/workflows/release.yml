@@ -22,8 +22,9 @@ concurrency:
 jobs:
   publish:
     name: publish immutable image
-    # A fresh repository has no ACR or release identity yet. Keep this workflow
-    # inert until the reviewed Azure bootstrap publishes all three values.
+    # Job conditions are evaluated before GitHub enters the development
+    # environment. These three non-secret existence gates therefore also live
+    # at repository scope; environment-scoped values remain the runtime source.
     if: vars.ACR_NAME != '' && vars.ACR_LOGIN_SERVER != '' && vars.AZURE_RELEASE_CLIENT_ID != ''
     runs-on: ubuntu-latest
     environment: development
