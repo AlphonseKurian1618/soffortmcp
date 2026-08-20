@@ -2,9 +2,10 @@
 
 `soffortbackend` is a small, production-shaped [Model Context Protocol](https://modelcontextprotocol.io/) resource server. It publishes one authenticated `hello_world` tool at `https://soffort.com/mcp` and is designed to run as a stateless, horizontally scalable workload in Azure Kubernetes Service (AKS).
 
-Apple and passwordless email one-time passcodes are the sign-in methods in Microsoft Entra
-External ID. The server accepts only short-lived Entra API access tokens; it never receives Apple
-tokens, the Apple private key, an email OTP, or an end-user password.
+Microsoft Entra External ID is configured for Apple and passwordless email one-time passcodes.
+Apple is the verified development path; the managed email provider page has a known issue recorded
+in `docs/identity-runbook.md`. The server accepts only short-lived Entra API access tokens; it never
+receives Apple tokens, the Apple private key, an email OTP, or an end-user password.
 
 ## API contract
 

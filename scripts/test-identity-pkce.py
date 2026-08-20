@@ -199,7 +199,7 @@ def verify_access_token(
     if authorized_party != client_id:
         raise RuntimeError("Access token authorized-party claim did not match the VS Code client")
     if required_scope not in scopes:
-        raise RuntimeError("Access token did not contain soffortbackend.access")
+        raise RuntimeError(f"Access token did not contain {required_scope}")
 
     # These booleans prove protocol compatibility without disclosing identity,
     # timestamps, JWT key identifiers, or any reusable bearer credential.
