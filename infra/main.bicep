@@ -41,6 +41,10 @@ var nodeResourceGroupName = 'rg-soffortbackend-dev-wus2-nodes'
 var ingressPublicIpName = 'pip-soffortbackend-dev-ingress-wus2'
 var outboundPublicIpName = 'pip-soffortbackend-dev-outbound-wus2'
 var repository = 'AlphonseKurian1618/soffortmcp'
+// GitHub issues the immutable owner/repository-ID form for this repository's
+// OIDC subject. Match it exactly and keep the environment suffix so only jobs
+// entering the protected development environment can assume these identities.
+var githubEnvironmentSubject = 'repo:AlphonseKurian1618@62353061/soffortmcp@1338967623:environment:development'
 var commonTags = {
   application: application
   environment: environment
@@ -346,7 +350,7 @@ resource releaseFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/fed
   name: 'github-development-environment'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${repository}:environment:development'
+    subject: githubEnvironmentSubject
     audiences: [
       'api://AzureADTokenExchange'
     ]
@@ -380,7 +384,7 @@ resource lifecycleFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/f
   name: 'github-development-environment'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${repository}:environment:development'
+    subject: githubEnvironmentSubject
     audiences: [
       'api://AzureADTokenExchange'
     ]

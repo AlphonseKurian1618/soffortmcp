@@ -9,7 +9,11 @@
 5. Authenticate Azure CLI to the External ID tenant and run `python scripts/bootstrap-identity.py --tenant-id <external-tenant-guid> --tenant-subdomain <ciam-subdomain> --github-repository AlphonseKurian1618/soffortmcp`. This writes the non-secret identity outputs to protected GitHub environment variables; finish the Apple and Email OTP user-flow steps in `docs/identity-runbook.md`.
 6. Confirm `OPERATOR_OBJECT_ID` in the GitHub development environment matches the value reported by `scripts/preflight.sh`.
 7. Run the infrastructure workflow with `apply=false`, review What-If, then rerun with `apply=true` after environment approval.
-8. Copy its ACR, release client ID, lifecycle client ID, and login-server outputs into `ACR_NAME`, `AZURE_RELEASE_CLIENT_ID`, `AZURE_LIFECYCLE_CLIENT_ID`, and `ACR_LOGIN_SERVER` development environment variables.
+8. Copy its ACR, release client ID, lifecycle client ID, and login-server outputs into `ACR_NAME`,
+   `AZURE_RELEASE_CLIENT_ID`, `AZURE_LIFECYCLE_CLIENT_ID`, and `ACR_LOGIN_SERVER` development
+   environment variables. Mirror those same four non-secret values as repository variables because
+   GitHub evaluates the release/lifecycle job guards before it enters the environment. Keep tenant,
+   identity, operator, and certificate settings environment-scoped.
 9. In GoDaddy DNS, create an apex `A` record whose host is `@` and value is the `ingressIpAddress` deployment output. Use a short TTL such as 600 seconds during setup. Inspect existing apex `A`, `AAAA`, forwarding, and parking records before replacing anything; DNS must resolve only to the AKS ingress before cert-manager can complete HTTP-01 validation.
 
 No Apple secret, Azure service-principal secret, or Flux repository credential is used. Flux has public read-only HTTPS access; repository writes still require protected GitHub workflows and OIDC.
