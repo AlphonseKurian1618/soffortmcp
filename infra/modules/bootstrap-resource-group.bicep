@@ -3,7 +3,10 @@ targetScope = 'resourceGroup'
 @description('Location for the GitHub infrastructure managed identity.')
 param location string
 
-var repository = 'AlphonseKurian1618/soffortmcp'
+// GitHub's current OIDC subject includes immutable owner and repository IDs.
+// Binding those IDs prevents a renamed or later-recreated repository from
+// inheriting this deployment identity merely by reusing the old name.
+var githubEnvironmentSubject = 'repo:AlphonseKurian1618@62353061/soffortmcp@1338967623:environment:development'
 var commonTags = {
   application: 'soffortbackend'
   environment: 'development'
@@ -21,7 +24,7 @@ resource infrastructureFederation 'Microsoft.ManagedIdentity/userAssignedIdentit
   name: 'github-development-environment'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${repository}:environment:development'
+    subject: githubEnvironmentSubject
     audiences: [
       'api://AzureADTokenExchange'
     ]
@@ -60,4 +63,3 @@ resource infrastructureRbacAdministrator 'Microsoft.Authorization/roleAssignment
 output infrastructureClientId string = infrastructureIdentity.properties.clientId
 output infrastructurePrincipalId string = infrastructureIdentity.properties.principalId
 output infrastructureResourceId string = infrastructureIdentity.id
-
