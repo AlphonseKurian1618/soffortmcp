@@ -14,6 +14,10 @@ DISALLOWED_TYPES = {
     "microsoft.network/natgateways",
     "microsoft.insights/components",
     "microsoft.operationalinsights/workspaces",
+    "microsoft.network/privateendpoints",
+    "microsoft.notificationhubs/namespaces",
+    "microsoft.servicebus/namespaces",
+    "microsoft.cache/redis",
 }
 ALLOWED_NODE_SIZES = {"Standard_D4pls_v6", "Standard_D4pls_v5"}
 
@@ -68,6 +72,35 @@ def validate(template: dict[str, Any]) -> list[str]:
     allowed = set(node_parameter.get("allowedValues", []))
     if allowed != ALLOWED_NODE_SIZES:
         violations.append(f"nodeVmSize must allow only {sorted(ALLOWED_NODE_SIZES)}")
+
+    cosmos_accounts = [
+        item
+        for item in resources
+        if str(item.get("type", "")).lower() == "microsoft.documentdb/databaseaccounts"
+    ]
+    if len(cosmos_accounts) != 1:
+        violations.append(
+            f"development must define exactly one Cosmos account, found {len(cosmos_accounts)}"
+        )
+    else:
+        cosmos = cosmos_accounts[0].get("properties", {})
+        capabilities = {item.get("name") for item in cosmos.get("capabilities", [])}
+        if capabilities != {"EnableServerless"}:
+            violations.append("Cosmos development account must be serverless only")
+        if cosmos.get("disableLocalAuth") is not True:
+            violations.append("Cosmos local/key authentication must be disabled")
+        if len(cosmos.get("locations", [])) != 1:
+            violations.append("Cosmos development account must remain single-region")
+
+    vaults = [
+        item
+        for item in resources
+        if str(item.get("type", "")).lower() == "microsoft.keyvault/vaults"
+    ]
+    if len(vaults) != 1:
+        violations.append(f"development must define exactly one Key Vault, found {len(vaults)}")
+    elif vaults[0].get("properties", {}).get("sku", {}).get("name") != "standard":
+        violations.append("development Key Vault must use the Standard SKU")
     return violations
 
 

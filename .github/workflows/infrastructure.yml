@@ -55,7 +55,11 @@ jobs:
               entraJwksUrl="${{ vars.ENTRA_JWKS_URL }}" \
               entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
               entraApiAudience="${{ vars.ENTRA_API_AUDIENCE }}" \
-              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}"
+              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}" \
+              entraIosClientId="${{ vars.ENTRA_IOS_CLIENT_ID }}" \
+              apnsKeyId="${{ vars.APNS_KEY_ID }}" \
+              apnsPrivateKeySecretVersion="${{ vars.APNS_PRIVATE_KEY_SECRET_VERSION }}" \
+              keyVaultOperatorIpAddress="${{ vars.KEY_VAULT_OPERATOR_IP }}"
       - name: Apply reviewed Azure resources
         if: inputs.apply
         run: |
@@ -72,12 +76,16 @@ jobs:
               entraJwksUrl="${{ vars.ENTRA_JWKS_URL }}" \
               entraTenantId="${{ vars.ENTRA_TENANT_ID }}" \
               entraApiAudience="${{ vars.ENTRA_API_AUDIENCE }}" \
-              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}"
+              entraVscodeClientId="${{ vars.ENTRA_VSCODE_CLIENT_ID }}" \
+              entraIosClientId="${{ vars.ENTRA_IOS_CLIENT_ID }}" \
+              apnsKeyId="${{ vars.APNS_KEY_ID }}" \
+              apnsPrivateKeySecretVersion="${{ vars.APNS_PRIVATE_KEY_SECRET_VERSION }}" \
+              keyVaultOperatorIpAddress="${{ vars.KEY_VAULT_OPERATOR_IP }}"
       - name: Publish non-secret post-deployment outputs
         if: inputs.apply
         run: |
           deployment="soffortbackend-dev-${GITHUB_RUN_ID}"
           az deployment group show -g rg-soffortbackend-dev-wus2 -n "${deployment}" \
-            --query 'properties.outputs.{acr:registryName.value,loginServer:registryLoginServer.value,releaseClientId:releaseClientId.value,lifecycleClientId:lifecycleClientId.value,ip:ingressIpAddress.value}' \
+            --query 'properties.outputs.{acr:registryName.value,loginServer:registryLoginServer.value,releaseClientId:releaseClientId.value,lifecycleClientId:lifecycleClientId.value,applicationClientId:applicationClientId.value,cosmosEndpoint:cosmosEndpoint.value,keyVault:keyVaultName.value,ip:ingressIpAddress.value}' \
             --output table
           echo "Copy these outputs into the matching protected development environment variables before running release or lifecycle workflows." >> "${GITHUB_STEP_SUMMARY}"

@@ -172,22 +172,35 @@ class EntraTokenVerifier:
                 audience=self.settings.entra_api_audience,
                 issuer=self.settings.canonical_issuer,
                 leeway=self.settings.jwt_leeway_seconds,
-                options={"require": ["aud", "exp", "iat", "iss", "nbf", "sub"]},
+                options={"require": ["aud", "exp", "iat", "iss", "nbf", "sub", "oid"]},
             )
         except jwt.PyJWTError, httpx.HTTPError, ValueError, TypeError:
             # Do not include the token, claims, email, or subject in auth logs.
             LOGGER.warning("entra_token_rejected")
             return None
 
-        if claims.get("tid") != str(self.settings.entra_tenant_id):
+        tenant_id = claims.get("tid")
+        if tenant_id != str(self.settings.entra_tenant_id):
             return None
         authorized_party = claims.get("azp") or claims.get("appid")
-        if authorized_party != str(self.settings.entra_vscode_client_id):
+        authorized_clients = {
+            str(self.settings.entra_vscode_client_id): "vscode",
+            str(self.settings.entra_ios_client_id): "ios",
+        }
+        client_kind = authorized_clients.get(str(authorized_party))
+        if client_kind is None:
             return None
 
         claim_scopes = set(str(claims.get("scp", "")).split())
         subject = claims.get("sub")
         if not isinstance(subject, str) or not subject:
+            return None
+        object_id = claims.get("oid")
+        if not isinstance(object_id, str) or not object_id:
+            # ``sub`` is pairwise to the client registration. Phase 2 links the
+            # VS Code and iOS sessions only through Entra's tenant-wide ``oid``;
+            # accepting a token without it could route an approval to the wrong
+            # account or tempt future code to fall back to mutable email.
             return None
 
         # Entra requests use the fully-qualified scope URI but emit the short
@@ -198,12 +211,20 @@ class EntraTokenVerifier:
         mcp_scopes = set(claim_scopes)
         if self.settings.required_scope_value in claim_scopes:
             mcp_scopes.add(self.settings.required_scope_uri)
+        if self.settings.mobile_scope_value in claim_scopes:
+            mcp_scopes.add(self.settings.mobile_scope_uri)
         return AccessToken(
             token=token,
             client_id=str(authorized_party),
             scopes=sorted(mcp_scopes),
             expires_at=int(claims["exp"]),
             resource=self.settings.canonical_public_url,
-            subject=subject,
-            claims={"tid": claims["tid"], "ver": claims.get("ver")},
+            subject=object_id,
+            claims={
+                "tid": tenant_id,
+                "oid": object_id,
+                "sub": subject,
+                "ver": claims.get("ver"),
+                "client_kind": client_kind,
+            },
         )

@@ -1,11 +1,19 @@
 """HTTP-level tests for discovery, authorization, and transport hardening."""
 
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from uuid import uuid7
+
 import httpx
 import pytest
+from conftest import OBJECT_ID, TENANT_ID
 from mcp.server.auth.provider import AccessToken
 
 from soffortbackend.app import create_app
+from soffortbackend.models import Approval, ApprovalStatus, Device
+from soffortbackend.notifications import DeliveryResult
 from soffortbackend.settings import Settings
+from soffortbackend.store import InMemoryApprovalStore
 
 
 class WrongScopeVerifier:
@@ -31,6 +39,33 @@ class WrongScopeVerifier:
             resource="http://testserver/mcp",
             subject="test-subject",
         )
+
+
+class AutoApproveNotifier:
+    """Accept a fixture push and atomically approve before the MCP poll."""
+
+    ready = True
+
+    def __init__(self, store: InMemoryApprovalStore) -> None:
+        self.store = store
+
+    async def start(self) -> None:
+        """Match provider lifecycle."""
+
+    async def close(self) -> None:
+        """Match provider lifecycle."""
+
+    async def send_approval(self, approval: Approval, devices: Sequence[Device]) -> DeliveryResult:
+        persisted = await self.store.get_approval(approval.partition_key, approval.approval_id)
+        assert persisted is not None
+        await self.store.decide_approval(
+            persisted,
+            status=ApprovalStatus.APPROVED,
+            device_id=devices[0].device_id,
+            decision_id=str(uuid7()),
+            decided_at=datetime.now(UTC),
+        )
+        return DeliveryResult((devices[0].device_id,), ())
 
 
 @pytest.mark.asyncio
@@ -146,7 +181,25 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
     fake_verifier,
 ) -> None:
     """Exercise the 2026 single-exchange profile through the real HTTP boundary."""
-    app = create_app(settings, token_verifier=fake_verifier)
+    store = InMemoryApprovalStore()
+    partition_key = f"{TENANT_ID}:{OBJECT_ID}"
+    await store.put_profile(partition_key, "Alphonse")
+    device = Device(
+        partition_key=partition_key,
+        device_id=str(uuid7()),
+        public_jwk={"kty": "EC", "crv": "P-256", "x": "fixture", "y": "fixture"},
+        apns_token="ab" * 32,
+        apns_environment="sandbox",
+        notifications_enabled=True,
+        updated_at=datetime.now(UTC),
+    )
+    store.devices[(partition_key, device.device_id)] = device
+    app = create_app(
+        settings,
+        token_verifier=fake_verifier,
+        approval_store=store,
+        notifier=AutoApproveNotifier(store),
+    )
     headers = {
         "Authorization": "Bearer valid-test-token",
         "Accept": "application/json, text/event-stream",
@@ -193,10 +246,11 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
     assert called.status_code == 200
     result = called.json()["result"]
     assert result["structuredContent"] == {
-        "message": "Hello, World!",
+        "message": "Hello, Alphonse!",
+        "user_name": "Alphonse",
         "server": "soffortbackend",
     }
-    assert result["content"] == [{"type": "text", "text": "Hello, World!"}]
+    assert result["content"] == [{"type": "text", "text": "Hello, Alphonse!"}]
 
 
 @pytest.mark.asyncio

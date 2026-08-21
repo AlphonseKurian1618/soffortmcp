@@ -18,6 +18,7 @@ spec:
     metadata:
       labels:
         {{- include "soffortbackend.selectorLabels" . | nindent 8 }}
+        azure.workload.identity/use: "true"
     spec:
       serviceAccountName: {{ include "soffortbackend.fullname" . }}
       automountServiceAccountToken: false
@@ -57,10 +58,38 @@ spec:
               value: {{ .Values.identity.apiAudience | quote }}
             - name: SOFFORT_ENTRA_VSCODE_CLIENT_ID
               value: {{ .Values.identity.vscodeClientId | quote }}
+            - name: SOFFORT_ENTRA_IOS_CLIENT_ID
+              value: {{ .Values.identity.iosClientId | quote }}
             - name: SOFFORT_REQUIRED_SCOPE_VALUE
               value: {{ .Values.identity.scopeValue | quote }}
             - name: SOFFORT_REQUIRED_SCOPE_URI
               value: {{ .Values.identity.scopeUri | quote }}
+            - name: SOFFORT_MOBILE_SCOPE_VALUE
+              value: {{ .Values.identity.mobileScopeValue | quote }}
+            - name: SOFFORT_MOBILE_SCOPE_URI
+              value: {{ .Values.identity.mobileScopeUri | quote }}
+            - name: SOFFORT_COSMOS_ENDPOINT
+              value: {{ .Values.approval.cosmosEndpoint | quote }}
+            - name: SOFFORT_COSMOS_DATABASE
+              value: {{ .Values.approval.database | quote }}
+            - name: SOFFORT_COSMOS_CONTAINER
+              value: {{ .Values.approval.container | quote }}
+            - name: SOFFORT_AZURE_WORKLOAD_CLIENT_ID
+              value: {{ .Values.approval.workloadClientId | quote }}
+            - name: SOFFORT_KEY_VAULT_URL
+              value: {{ .Values.approval.keyVaultUrl | quote }}
+            - name: SOFFORT_APNS_PRIVATE_KEY_SECRET_NAME
+              value: {{ .Values.approval.apnsSecretName | quote }}
+            - name: SOFFORT_APNS_PRIVATE_KEY_SECRET_VERSION
+              value: {{ .Values.approval.apnsSecretVersion | quote }}
+            - name: SOFFORT_APNS_KEY_ID
+              value: {{ .Values.approval.apnsKeyId | quote }}
+            - name: SOFFORT_APNS_TEAM_ID
+              value: {{ .Values.approval.apnsTeamId | quote }}
+            - name: SOFFORT_APNS_TOPIC
+              value: {{ .Values.approval.apnsTopic | quote }}
+            - name: SOFFORT_APNS_ENVIRONMENT
+              value: {{ .Values.approval.apnsEnvironment | quote }}
             - name: SOFFORT_ALLOWED_HOSTS_CSV
               value: soffort.com
             - name: SOFFORT_ALLOWED_ORIGINS_CSV
@@ -110,4 +139,3 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 32Mi
-

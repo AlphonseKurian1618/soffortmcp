@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
 from soffortbackend.auth import EntraTokenVerifier, JwksCache
+from soffortbackend.models import Principal
 from soffortbackend.settings import Settings
 
 
@@ -26,6 +27,7 @@ def make_claims(settings: Settings, **overrides: Any) -> dict[str, Any]:
         "iss": settings.canonical_issuer,
         "aud": settings.entra_api_audience,
         "sub": "entra-subject",
+        "oid": "55555555-5555-4555-8555-555555555555",
         "tid": str(settings.entra_tenant_id),
         "azp": str(settings.entra_vscode_client_id),
         "scp": settings.required_scope_value,
@@ -78,6 +80,8 @@ async def test_valid_entra_token_is_mapped_to_mcp_scope(settings: Settings) -> N
     assert access_token is not None
     assert settings.required_scope_uri in access_token.scopes
     assert access_token.resource == settings.canonical_public_url
+    assert access_token.subject == "55555555-5555-4555-8555-555555555555"
+    assert access_token.claims["client_kind"] == "vscode"
     assert len(requests) == 1
 
 
@@ -91,6 +95,7 @@ async def test_valid_entra_token_is_mapped_to_mcp_scope(settings: Settings) -> N
         ("azp", "44444444-4444-4444-8444-444444444444"),
         ("exp", 1),
         ("nbf", 4_102_444_800),
+        ("oid", ""),
     ],
 )
 async def test_invalid_entra_claim_is_rejected(
@@ -125,6 +130,29 @@ async def test_valid_token_without_required_scope_is_preserved(settings: Setting
 
     assert access_token is not None
     assert settings.required_scope_uri not in access_token.scopes
+
+
+@pytest.mark.asyncio
+async def test_valid_ios_token_maps_only_mobile_scope(settings: Settings) -> None:
+    private_key, jwk = make_key()
+    verifier, _ = await make_verifier(settings, jwk)
+    token = jwt.encode(
+        make_claims(
+            settings,
+            azp=str(settings.entra_ios_client_id),
+            scp=settings.mobile_scope_value,
+        ),
+        private_key,
+        algorithm="RS256",
+        headers={"kid": "test-key"},
+    )
+
+    access_token = await verifier.verify_token(token)
+
+    assert access_token is not None
+    assert settings.mobile_scope_uri in access_token.scopes
+    assert settings.required_scope_uri not in access_token.scopes
+    assert access_token.claims["client_kind"] == "ios"
 
 
 @pytest.mark.asyncio
@@ -172,3 +200,18 @@ async def test_jwks_rejects_document_without_usable_keys() -> None:
     cache = JwksCache("https://issuer.example/keys", client=client)
     with pytest.raises(ValueError, match="no usable"):
         await cache.get_key("x")
+
+
+def test_principal_requires_all_cross_application_identity_claims() -> None:
+    from mcp.server.auth.provider import AccessToken
+
+    base = {
+        "tid": "tenant",
+        "oid": "object",
+        "client_kind": "vscode",
+    }
+    for missing in base:
+        claims = dict(base)
+        claims.pop(missing)
+        token = AccessToken(token="fixture", client_id="client", scopes=[], claims=claims)
+        assert Principal.from_access_token(token) is None

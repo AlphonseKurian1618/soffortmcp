@@ -1,6 +1,6 @@
 # soffortbackend
 
-`soffortbackend` is a small, production-shaped [Model Context Protocol](https://modelcontextprotocol.io/) resource server. It publishes one authenticated `hello_world` tool at `https://soffort.com/mcp` and is designed to run as a stateless, horizontally scalable workload in Azure Kubernetes Service (AKS).
+`soffortbackend` is a production-shaped [Model Context Protocol](https://modelcontextprotocol.io/) resource server. It publishes one authenticated `hello_world` tool at `https://soffort.com/mcp`. Every invocation creates a fresh, 60-second iPhone approval and returns the user's server profile name only after the enrolled phone signs an approval.
 
 Microsoft Entra External ID is configured for Apple and passwordless email one-time passcodes.
 Apple is the verified development path; the managed email provider page has a known issue recorded
@@ -13,13 +13,17 @@ receives Apple tokens, the Apple private key, an email OTP, or an end-user passw
 |---|---|---|
 | `POST /mcp` | Public, bearer token required | Stateless Streamable HTTP MCP |
 | `GET /.well-known/oauth-protected-resource/mcp` | Public | RFC 9728 discovery |
+| `GET /.well-known/oauth-protected-resource/v1` | Public | iPhone API OAuth discovery |
+| `/v1/me/profile`, `/v1/devices/*`, `/v1/approvals/*` | Public, iOS bearer token required | Profile, phone enrollment, and signed decisions |
 | `GET /livez` and `GET /readyz` | Cluster-only | Kubernetes probes |
 
-The only tool is `hello_world(name: str = "World")`. It returns both MCP text content and this structured result:
+The only tool is `hello_world()`; it has no arguments. A successful approved call returns both MCP text content and this structured result:
 
 ```json
-{"message":"Hello, World!","server":"soffortbackend"}
+{"message":"Hello, Alphonse!","user_name":"Alphonse","server":"soffortbackend"}
 ```
+
+Without a profile, enrolled phone, APNs delivery, or timely approval, the tool fails closed with a stable value-free code. Apple tokens and notification payloads are never authorization. See [the mobile approval contract](docs/mobile-approval-api.md).
 
 ## Local validation
 
@@ -44,12 +48,11 @@ There is intentionally no local authentication bypass. Unit tests inject a deter
 ## Identity setup
 
 1. Create or select a Microsoft Entra External ID tenant.
-2. Run `scripts/bootstrap-identity.py` interactively as an administrator. It creates the API and public-client registrations idempotently and prints non-secret deployment outputs.
+2. Run `scripts/bootstrap-identity.py` as an administrator. It creates the API, VS Code, and iOS public-client registrations, both delegated scopes, admin consent, and optional user-flow associations idempotently.
 3. In Apple Developer, create the primary App ID, Services ID, Sign in with Apple key, and register the exact federation return URL displayed by Entra.
-4. Configure Apple and Email One Time Passcode in the External ID user flow, enable open
-   self-service registration, and associate `soffortbackend-vscode` with that flow.
+4. Configure Apple and Email One Time Passcode in the External ID user flow, enable open self-service registration, and associate both `soffortbackend-vscode` and `soffortbackend-ios` with that flow.
 5. Upload or derive Apple material only through the Entra administration flow. Never copy the `.p8` file into this repository, AKS, GitHub Actions, or chat.
-6. Grant the VS Code public client admin consent to `soffortbackend.access` and perform the VS Code OAuth compatibility gate described in `docs/identity-runbook.md`.
+6. Grant the VS Code client `soffortbackend.access` and the iOS client `soffortbackend.mobile`. Perform both OAuth gates in `docs/identity-runbook.md`.
 
 Upstream authentication is intentionally not hidden behind application code. Microsoft Entra owns
 the Apple callback and email-code verification, then issues the audience-bound access token that
@@ -57,7 +60,7 @@ this service verifies.
 
 ## Azure deployment
 
-The development topology uses West US 2, AKS Free management tier, two scheduled PAYG ARM64 nodes, ACR Basic, direct Traefik ingress, cert-manager, and Flux. GoDaddy remains authoritative for `soffort.com`; deployment outputs the static ingress IP for a manual apex `A` record. It deliberately excludes Azure Front Door, WAF, NAT Gateway, databases, and paid monitoring.
+The development topology uses West US 2, AKS Free management tier, two scheduled PAYG ARM64 nodes, ACR Basic, direct Traefik ingress, cert-manager, Flux, one serverless Cosmos DB account, and one Standard Key Vault. The app uses direct APNs, avoiding Redis, Service Bus, and Notification Hubs. GoDaddy remains authoritative for `soffort.com`; deployment outputs the static ingress IP for the apex `A` record. It deliberately excludes Azure Front Door, WAF, NAT Gateway, and paid monitoring.
 
 Deployment sequence:
 

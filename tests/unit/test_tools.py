@@ -1,28 +1,29 @@
-"""Unit tests for the public MCP tool contract."""
+"""Unit tests for approved MCP result construction."""
 
-import pytest
-
-from soffortbackend.tools import hello_world
+from soffortbackend.tools import approval_error, approved_hello_world
 
 
-def test_hello_world_default_contract() -> None:
-    result = hello_world()
+def test_approved_hello_world_contract() -> None:
+    result = approved_hello_world("Alphonse")
     assert result.structured_content == {
-        "message": "Hello, World!",
+        "message": "Hello, Alphonse!",
+        "user_name": "Alphonse",
         "server": "soffortbackend",
     }
     assert result.content[0].type == "text"
-    assert result.content[0].text == "Hello, World!"
+    assert result.content[0].text == "Hello, Alphonse!"
 
 
-def test_hello_world_trims_unicode_name() -> None:
-    assert hello_world("  世界  ").structured_content == {
+def test_approved_hello_world_preserves_unicode_profile() -> None:
+    assert approved_hello_world("世界").structured_content == {
         "message": "Hello, 世界!",
+        "user_name": "世界",
         "server": "soffortbackend",
     }
 
 
-@pytest.mark.parametrize("name", ["", "   ", "x" * 101])
-def test_hello_world_rejects_invalid_name(name: str) -> None:
-    with pytest.raises(ValueError, match="between 1 and 100"):
-        hello_world(name)
+def test_approval_error_contains_no_structured_profile() -> None:
+    result = approval_error("approval_denied")
+    assert result.is_error is True
+    assert result.structured_content is None
+    assert result.content[0].text == "approval_denied"

@@ -1,8 +1,7 @@
 # End-to-end VS Code test runbook
 
 This runbook proves the delivery outcome: VS Code authenticates a user, receives an audience- and
-scope-bound access token, initializes `soffortbackend`, lists `hello_world`, and calls the tool
-through `https://soffort.com/mcp`.
+scope-bound access token, initializes `soffortbackend`, lists `hello_world`, sends an opaque APNs notification, accepts a Secure Enclave-signed phone decision, and returns the profile name through `https://soffort.com/mcp`.
 
 ## Acceptance record
 
@@ -16,6 +15,8 @@ Never record an access token, authorization code, email OTP, Apple subject, or p
 | OAuth discovery | RFC 9728 metadata identifies the canonical resource and External ID authorization server |
 | Authentication | VS Code opens a browser and completes the configured External ID flow |
 | Authorization | Missing token returns 401; missing scope returns 403; correct token reaches MCP |
+| Phone binding | iOS uses the same provider/account, mobile scope, APNs sandbox, and enrolled P-256 key |
+| User decision | A fresh notification opens authoritative metadata and Face ID/passcode signs one decision |
 | MCP protocol | `initialize`, `tools/list`, and `tools/call` succeed |
 | Tool contract | `hello_world` returns the exact text and structured result |
 
@@ -27,8 +28,10 @@ Never record an access token, authorization code, email OTP, Apple subject, or p
 - MCP resource: `https://soffort.com/mcp`
 - External tenant: `85685fcd-3fc0-4032-982c-92ddd6efc37b`
 - VS Code client: `9cea70e5-8b4c-4f37-bf6f-2d789ae49492`
+- iOS client: `dcae2fbc-315f-41b0-9c47-17482098cbab`
 - API audience: `387b7862-7ab6-4139-af73-b54f535ded29`
 - Required delegated scope: `soffortbackend.access`
+- iOS delegated scope: `soffortbackend.mobile`
 
 These values are identifiers, not credentials. The Apple `.p8`, bearer tokens, and OTPs must never
 be placed in the repository, shell history, screenshots, tickets, or test evidence.
@@ -147,7 +150,18 @@ Expected results:
 - unauthenticated MCP request: 401 and a `WWW-Authenticate` metadata challenge;
 - public `/livez`: not routed (404), never an application health response.
 
-## 5. VS Code desktop
+## 5. Prepare the physical iPhone
+
+The iPhone client is maintained in `/Users/alphonsekurian/Code/Vault2` on branch `codex/phase2-phone-approval`. A simulator build proves compilation but cannot prove Secure Enclave or APNs.
+
+1. Create a dedicated APNs sandbox key and import it as described in `docs/operator-runbook.md`. Never reuse the Sign in with Apple key.
+2. Set the Xcode signing team to `TTP26ZNL9Q`; confirm bundle ID `com.soffort.aivault`, Push Notifications, keychain sharing, and the Debug `aps-environment=development` entitlement.
+3. Build and install the Debug app on a physical iPhone. The checked project pins official MSAL 2.14.1 and client ID `dcae2fbc-315f-41b0-9c47-17482098cbab`.
+4. Sign in with the exact Apple or email identity that will be used in VS Code. Create a 1–100 character profile name.
+5. Tap **Link this iPhone**, grant notifications, and complete the device-owner prompt. Confirm the app reports the phone linked.
+6. Repeat once with VS Code and iPhone using different providers; expect `phone_not_linked`. Return both to the same identity before the positive test.
+
+## 6. VS Code desktop and phone decision
 
 1. Install or update stable VS Code to 1.123 or later.
 2. Open this repository and inspect `.vscode/mcp.json`. It must contain the canonical URL and
@@ -161,22 +175,22 @@ Expected results:
    tenant and return through `http://127.0.0.1:33418`.
 6. Open **MCP: List Servers > soffortbackend > Show Output**. Confirm initialization succeeds and
    no token, code, email, or response body is logged.
-7. In Agent mode, ask: `Use soffortbackend hello_world with the name VS Code.` Approve the tool
-   call when prompted.
+7. In Agent mode, ask: `Use soffortbackend hello_world.` Approve VS Code's normal tool prompt.
+8. Confirm the iPhone receives **Soffort approval requested**. Open the app, verify requester `VS Code`, tool `hello_world`, and arguments `None`, then tap **Approve with Face ID** within 60 seconds.
 
 Expected tool result:
 
 ```json
 {
-  "message": "Hello, VS Code!",
+  "message": "Hello, <profile-name>!",
+  "user_name": "<profile-name>",
   "server": "soffortbackend"
 }
 ```
 
-Repeat with no name and expect `Hello, World!`. Repeat with a 101-character name and expect a
-validation error rather than truncation or a server failure.
+Repeat and deny on the phone; expect `approval_denied`. Repeat without acting; expect `approval_timed_out` after 60 seconds. Disable notification permission and expect a closed delivery/link failure rather than an MCP response. The tool accepts no `name` argument.
 
-## 6. Authorization checks
+## 7. Authorization checks
 
 - Repeat the unauthenticated request and confirm 401, not a redirect or 200.
 - Use a correctly signed token without `soffortbackend.access` in an isolated test and confirm 403
@@ -187,13 +201,11 @@ validation error rather than truncation or a server failure.
 These negative tests prove authz is enforced by the resource server rather than merely presenting a
 login page.
 
-## 7. `vscode.dev` and stateless behavior
+## 8. `vscode.dev`, multiple phones, and stateless behavior
 
-Open the repository through `vscode.dev`, start `soffortbackend`, and repeat the tool call. The OAuth
-callback must use `https://vscode.dev/redirect`. Alternate at least ten calls while observing pod
-logs; successful calls may land on either replica without a sticky session.
+Open the repository through `vscode.dev`, start `soffortbackend`, and repeat the tool call. The OAuth callback must use `https://vscode.dev/redirect`. Enroll a second iPhone when available; both should receive the opaque push and the first valid decision must win while a later decision receives a conflict. Alternate at least ten calls while observing pod logs; the initial MCP request and polling reads may land on either replica without affinity.
 
-## 8. Completion and shutdown
+## 9. Completion and shutdown
 
 Attach only sanitized evidence: versions, timestamps, status codes, non-secret claim checks, tool
 output, pod readiness, image digest, and CI/deployment URLs. Then stop the cluster with the manual

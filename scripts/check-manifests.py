@@ -22,6 +22,9 @@ def validate(documents: list[dict[str, Any]]) -> list[str]:
     if spec.get("replicas") != 2:
         violations.append("Deployment must start with two replicas")
     pod_spec = spec["template"]["spec"]
+    pod_labels = spec["template"].get("metadata", {}).get("labels", {})
+    if pod_labels.get("azure.workload.identity/use") != "true":
+        violations.append("application pod must opt into Azure Workload Identity")
     if pod_spec.get("automountServiceAccountToken") is not False:
         violations.append("service-account tokens must not be mounted")
     security = pod_spec.get("securityContext", {})
@@ -54,6 +57,10 @@ def validate(documents: list[dict[str, Any]]) -> list[str]:
         violations.append("PDB must keep one replica available")
     if "NetworkPolicy" not in by_kind:
         violations.append("NetworkPolicy is missing")
+    service_account = by_kind.get("ServiceAccount", {})
+    annotations = service_account.get("metadata", {}).get("annotations", {})
+    if not annotations.get("azure.workload.identity/client-id"):
+        violations.append("service account must select the application workload identity")
     gateway = by_kind.get("Gateway", {})
     listener_ports = {
         listener.get("name"): listener.get("port")

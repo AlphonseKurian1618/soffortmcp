@@ -9,6 +9,7 @@ from soffortbackend.settings import Settings
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
 CLIENT = UUID("22222222-2222-4222-8222-222222222222")
+IOS_CLIENT = UUID("33333333-3333-4333-8333-333333333333")
 
 
 def test_missing_identity_configuration_fails_closed() -> None:
@@ -27,6 +28,7 @@ def test_apple_cannot_be_configured_as_access_token_issuer() -> None:
             entra_tenant_id=TENANT,
             entra_api_audience="audience",
             entra_vscode_client_id=CLIENT,
+            entra_ios_client_id=IOS_CLIENT,
             required_scope_uri="http://testserver/mcp/scope",
             allowed_hosts_csv="testserver",
             allowed_origins_csv="https://vscode.dev",
@@ -52,6 +54,7 @@ def test_production_security_boundaries_reject_unsafe_values(overrides: dict[str
         "entra_tenant_id": TENANT,
         "entra_api_audience": "audience",
         "entra_vscode_client_id": CLIENT,
+        "entra_ios_client_id": IOS_CLIENT,
     }
     values.update(overrides)
     with pytest.raises(ValidationError):

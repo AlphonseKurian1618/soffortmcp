@@ -39,3 +39,10 @@ spec:
       tenantId: ${ENTRA_TENANT_ID}
       apiAudience: ${ENTRA_API_AUDIENCE}
       vscodeClientId: ${ENTRA_VSCODE_CLIENT_ID}
+      iosClientId: ${ENTRA_IOS_CLIENT_ID}
+    approval:
+      cosmosEndpoint: ${COSMOS_ENDPOINT}
+      workloadClientId: ${AZURE_WORKLOAD_CLIENT_ID}
+      keyVaultUrl: ${KEY_VAULT_URL}
+      apnsSecretVersion: ${APNS_PRIVATE_KEY_SECRET_VERSION}
+      apnsKeyId: ${APNS_KEY_ID}

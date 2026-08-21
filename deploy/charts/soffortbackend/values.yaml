@@ -11,8 +11,24 @@ identity:
   tenantId: 00000000-0000-0000-0000-000000000000
   apiAudience: 00000000-0000-0000-0000-000000000000
   vscodeClientId: 00000000-0000-0000-0000-000000000000
+  iosClientId: 00000000-0000-0000-0000-000000000001
   scopeValue: soffortbackend.access
   scopeUri: https://soffort.com/mcp/soffortbackend.access
+  mobileScopeValue: soffortbackend.mobile
+  mobileScopeUri: https://soffort.com/mcp/soffortbackend.mobile
+
+approval:
+  cosmosEndpoint: https://example.documents.azure.com:443/
+  database: soffortbackend
+  container: approval
+  workloadClientId: 00000000-0000-0000-0000-000000000000
+  keyVaultUrl: https://example.vault.azure.net/
+  apnsSecretName: apns-private-key
+  apnsSecretVersion: replace-with-immutable-version
+  apnsKeyId: ABCDEFGHIJ
+  apnsTeamId: TTP26ZNL9Q
+  apnsTopic: com.soffort.aivault
+  apnsEnvironment: sandbox
 
 service:
   port: 80
