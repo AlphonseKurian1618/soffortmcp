@@ -32,10 +32,17 @@ spec:
   values:
     image:
       repository: ${ACR_LOGIN_SERVER}/soffortbackend
-      digest: sha256:e6ee0ef7597cf595cd2d4df7ad3322070fa1c0f0466dd9e546d9cd880acc5af6
+      digest: sha256:63314bb10641d4d1aa1259bb6ac1b0947fcf310299da0acccbedb5a4890d2929
     identity:
       issuer: ${ENTRA_ISSUER}
       jwksUrl: ${ENTRA_JWKS_URL}
       tenantId: ${ENTRA_TENANT_ID}
       apiAudience: ${ENTRA_API_AUDIENCE}
       vscodeClientId: ${ENTRA_VSCODE_CLIENT_ID}
+      iosClientId: ${ENTRA_IOS_CLIENT_ID}
+    approval:
+      cosmosEndpoint: ${COSMOS_ENDPOINT}
+      workloadClientId: ${AZURE_WORKLOAD_CLIENT_ID}
+      keyVaultUrl: ${KEY_VAULT_URL}
+      apnsSecretVersion: ${APNS_PRIVATE_KEY_SECRET_VERSION}
+      apnsKeyId: ${APNS_KEY_ID}

@@ -34,6 +34,18 @@ param entraApiAudience string
 @description('VS Code public-client ID expected in azp/appid.')
 param entraVscodeClientId string
 
+@description('AI Vault iOS public-client ID expected on mobile API routes.')
+param entraIosClientId string
+
+@description('Dedicated Apple Push Notifications sandbox key identifier.')
+param apnsKeyId string
+
+@description('Immutable Key Vault version of the imported APNs .p8 secret.')
+param apnsPrivateKeySecretVersion string = ''
+
+@description('Optional operator public IPv4 address allowed to import and rotate the APNs secret.')
+param keyVaultOperatorIpAddress string = ''
+
 var application = 'soffortbackend'
 var environment = 'development'
 var clusterName = 'aks-soffortbackend-dev-wus2'
@@ -309,6 +321,231 @@ resource cluster 'Microsoft.ContainerService/managedClusters@2025-05-01' = {
   ]
 }
 
+resource applicationIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+  name: 'id-soffortbackend-app-dev'
+  location: location
+  tags: union(commonTags, {
+    purpose: 'aks-cosmos-keyvault-workload-identity'
+  })
+}
+
+resource applicationFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
+  parent: applicationIdentity
+  name: 'soffortbackend-service-account'
+  properties: {
+    issuer: cluster.properties.oidcIssuerProfile.issuerURL
+    subject: 'system:serviceaccount:soffortbackend:soffortbackend'
+    audiences: [
+      'api://AzureADTokenExchange'
+    ]
+  }
+}
+
+resource approvalCosmos 'Microsoft.DocumentDB/databaseAccounts@2025-04-15' = {
+  name: toLower('cosmos-soffort-dev-${uniqueString(subscription().id)}')
+  location: location
+  tags: commonTags
+  kind: 'GlobalDocumentDB'
+  properties: {
+    databaseAccountOfferType: 'Standard'
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: true
+    disableKeyBasedMetadataWriteAccess: true
+    minimalTlsVersion: 'Tls12'
+    enableAutomaticFailover: false
+    enableMultipleWriteLocations: false
+    locations: [
+      {
+        locationName: location
+        failoverPriority: 0
+        isZoneRedundant: false
+      }
+    ]
+    capabilities: [
+      {
+        name: 'EnableServerless'
+      }
+    ]
+    consistencyPolicy: {
+      defaultConsistencyLevel: 'Session'
+    }
+    networkAclBypass: 'None'
+    networkAclBypassResourceIds: []
+    ipRules: [
+      {
+        ipAddressOrRange: outboundPublicIp.properties.ipAddress
+      }
+    ]
+    backupPolicy: {
+      type: 'Periodic'
+      periodicModeProperties: {
+        backupIntervalInMinutes: 240
+        backupRetentionIntervalInHours: 8
+        backupStorageRedundancy: 'Local'
+      }
+    }
+  }
+}
+
+resource approvalDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2025-04-15' = {
+  parent: approvalCosmos
+  name: 'soffortbackend'
+  properties: {
+    resource: {
+      id: 'soffortbackend'
+    }
+  }
+}
+
+resource approvalContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2025-04-15' = {
+  parent: approvalDatabase
+  name: 'approval'
+  properties: {
+    resource: {
+      id: 'approval'
+      defaultTtl: -1
+      partitionKey: {
+        paths: [
+          '/partition_key'
+        ]
+        kind: 'Hash'
+        version: 2
+      }
+      indexingPolicy: {
+        automatic: true
+        indexingMode: 'consistent'
+        includedPaths: [
+          {
+            path: '/*'
+          }
+        ]
+        excludedPaths: [
+          {
+            path: '/"apns_token"/?'
+          }
+          {
+            path: '/"public_jwk"/*'
+          }
+          {
+            path: '/"display_name"/?'
+          }
+          {
+            path: '/"display_name_snapshot"/?'
+          }
+          {
+            // JWE bytes are fetched only by point read and must never inflate
+            // Cosmos indexing cost or become queryable content.
+            path: '/"compact_jwe"/?'
+          }
+        ]
+      }
+    }
+  }
+}
+
+resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2025-04-15' = {
+  parent: approvalCosmos
+  name: guid(approvalCosmos.id, applicationIdentity.id, 'data-contributor')
+  properties: {
+    principalId: applicationIdentity.properties.principalId
+    roleDefinitionId: '${approvalCosmos.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    scope: approvalCosmos.id
+  }
+}
+
+resource approvalVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
+  // Key Vault names are globally unique and capped at 24 characters.
+  name: toLower('kv-sf-${uniqueString(subscription().id)}')
+  location: location
+  tags: commonTags
+  properties: {
+    tenantId: tenant().tenantId
+    sku: {
+      family: 'A'
+      name: 'standard'
+    }
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    softDeleteRetentionInDays: 7
+    publicNetworkAccess: 'Enabled'
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Deny'
+      ipRules: concat(
+        [
+          {
+            value: outboundPublicIp.properties.ipAddress
+          }
+        ],
+        empty(keyVaultOperatorIpAddress) ? [] : [
+          {
+            value: keyVaultOperatorIpAddress
+          }
+        ]
+      )
+      virtualNetworkRules: []
+    }
+  }
+}
+
+resource disclosureKey 'Microsoft.KeyVault/vaults/keys@2024-11-01' = {
+  parent: approvalVault
+  name: 'permi-disclosure'
+  properties: {
+    kty: 'RSA'
+    keySize: 2048
+    keyOps: [
+      'encrypt'
+      'decrypt'
+    ]
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
+var keyVaultSecretsUserRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '4633458b-17de-408a-b874-0445c86b69e6'
+)
+resource applicationVaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(approvalVault.id, applicationIdentity.id, keyVaultSecretsUserRoleId)
+  scope: approvalVault
+  properties: {
+    principalId: applicationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: keyVaultSecretsUserRoleId
+  }
+}
+
+var keyVaultCryptoUserRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '12338af0-0e69-4776-bea7-57ae8d297424'
+)
+resource applicationVaultCryptoUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(approvalVault.id, applicationIdentity.id, keyVaultCryptoUserRoleId)
+  scope: approvalVault
+  properties: {
+    principalId: applicationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: keyVaultCryptoUserRoleId
+  }
+}
+
+var keyVaultSecretsOfficerRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
+)
+resource operatorVaultSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(approvalVault.id, operatorObjectId, keyVaultSecretsOfficerRoleId)
+  scope: approvalVault
+  properties: {
+    principalId: operatorObjectId
+    principalType: 'User'
+    roleDefinitionId: keyVaultSecretsOfficerRoleId
+  }
+}
+
 var acrPullRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '7f951dda-4ed3-4680-a7ca-43fe172d538d'
@@ -506,6 +743,12 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
             ENTRA_TENANT_ID: entraTenantId
             ENTRA_API_AUDIENCE: entraApiAudience
             ENTRA_VSCODE_CLIENT_ID: entraVscodeClientId
+            ENTRA_IOS_CLIENT_ID: entraIosClientId
+            COSMOS_ENDPOINT: approvalCosmos.properties.documentEndpoint
+            AZURE_WORKLOAD_CLIENT_ID: applicationIdentity.properties.clientId
+            KEY_VAULT_URL: approvalVault.properties.vaultUri
+            APNS_KEY_ID: apnsKeyId
+            APNS_PRIVATE_KEY_SECRET_VERSION: apnsPrivateKeySecretVersion
           }
         }
       }
@@ -523,4 +766,8 @@ output registryLoginServer string = registry.properties.loginServer
 output ingressIpAddress string = ingressPublicIp.properties.ipAddress
 output releaseClientId string = releaseIdentity.properties.clientId
 output lifecycleClientId string = lifecycleIdentity.properties.clientId
+output applicationClientId string = applicationIdentity.properties.clientId
+output cosmosEndpoint string = approvalCosmos.properties.documentEndpoint
+output keyVaultName string = approvalVault.name
+output keyVaultUrl string = approvalVault.properties.vaultUri
 output fluxConfigurationName string = fluxConfiguration.name

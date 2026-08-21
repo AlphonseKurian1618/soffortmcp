@@ -1,211 +1,156 @@
-# End-to-end VS Code test runbook
+# Permi vault end-to-end runbook
 
-This runbook proves the delivery outcome: VS Code authenticates a user, receives an audience- and
-scope-bound access token, initializes `soffortbackend`, lists `hello_world`, and calls the tool
-through `https://soffort.com/mcp`.
-
-## Acceptance record
-
-Record the date, tester, VS Code version, deployed image digest, and Git commit before starting.
-Never record an access token, authorization code, email OTP, Apple subject, or private-relay email.
-
-| Checkpoint | Expected result |
-|---|---|
-| Identity preflight | Apple validates PKCE, issuer, audience, tenant, client, resource, and scope; email status is recorded separately |
-| DNS and TLS | `soffort.com` resolves to the reserved ingress IP and presents a trusted certificate |
-| OAuth discovery | RFC 9728 metadata identifies the canonical resource and External ID authorization server |
-| Authentication | VS Code opens a browser and completes the configured External ID flow |
-| Authorization | Missing token returns 401; missing scope returns 403; correct token reaches MCP |
-| MCP protocol | `initialize`, `tools/list`, and `tools/call` succeed |
-| Tool contract | `hello_world` returns the exact text and structured result |
+This runbook proves Entra authentication, MCP authorization, physical-iPhone consent, selective disclosure, and the absence of server-side vault storage. Use fictional values only.
 
 ## Fixed development identifiers
 
-- Azure subscription: `86dfb8ca-2e38-4abb-9072-e8d077af295a`
-- Resource group: `rg-soffortbackend-dev-wus2`
-- AKS cluster: `aks-soffortbackend-dev-wus2`
-- MCP resource: `https://soffort.com/mcp`
+- Subscription: `86dfb8ca-2e38-4abb-9072-e8d077af295a`
+- Resource group / cluster: `rg-soffortbackend-dev-wus2` / `aks-soffortbackend-dev-wus2`
+- MCP endpoint: `https://soffort.com/mcp`
 - External tenant: `85685fcd-3fc0-4032-982c-92ddd6efc37b`
-- VS Code client: `9cea70e5-8b4c-4f37-bf6f-2d789ae49492`
+- VS Code public client: `9cea70e5-8b4c-4f37-bf6f-2d789ae49492`
+- iOS public client: `dcae2fbc-315f-41b0-9c47-17482098cbab`
 - API audience: `387b7862-7ab6-4139-af73-b54f535ded29`
-- Required delegated scope: `soffortbackend.access`
 
-These values are identifiers, not credentials. The Apple `.p8`, bearer tokens, and OTPs must never
-be placed in the repository, shell history, screenshots, tickets, or test evidence.
+Never record tokens, OTPs, real vault values, Apple subjects, private-relay emails, APNs tokens, or screenshots containing sensitive data.
 
-## 1. Local and identity preflight
-
-From the repository root:
+## 1. Verify build and deployment
 
 ```bash
-make lint
-make typecheck
-make test
-make bicep
+uv sync --extra dev --frozen
+uv run ruff format --check .
+uv run ruff check .
+uv run pyright
+uv run pytest
+az aks show -g rg-soffortbackend-dev-wus2 -n aks-soffortbackend-dev-wus2 \
+  --query powerState.code -o tsv
 ```
 
-Run the Apple authorization-code probe:
+If stopped, use the manual **cluster lifecycle** GitHub workflow. The hourly cost job stops AKS after 19:00 America/Los_Angeles; it never starts it in the morning.
+
+Confirm Flux and the immutable image digest through the private API command channel:
 
 ```bash
-.venv/bin/python scripts/test-identity-pkce.py \
-  --sign-in-method apple \
-  --timeout-seconds 600
+az aks command invoke -g rg-soffortbackend-dev-wus2 -n aks-soffortbackend-dev-wus2 \
+  --command "kubectl -n soffortbackend get pods; kubectl -n soffortbackend get helmrelease; kubectl -n soffortbackend get deploy soffortbackend -o jsonpath='{.spec.template.spec.containers[0].image}'"
 ```
 
-Apple mode adds Microsoft's supported `domain_hint=apple` issuer acceleration. Complete the Apple
-prompt yourself. The script keeps codes and tokens in memory and prints only conformance facts.
-Every boolean must be `true`, and `requested_sign_in_method` must be `apple`.
+Expected: two Ready app pods, Ready HelmRelease, and an `acr.../soffortbackend@sha256:...` image.
 
-Run the email OTP probe in a fresh private browser session:
+## 2. Verify public boundary
 
 ```bash
-.venv/bin/python scripts/test-identity-pkce.py \
-  --sign-in-method email \
-  --timeout-seconds 600
-```
-
-Enter the email and OTP yourself. Email OTP is enabled in the same managed user flow, but the
-current hosted provider page fails before it renders the selector. Record that result separately;
-it does not weaken or block the proven Apple-authenticated development path. Do not claim email
-E2E acceptance or promote the service to production until the managed-page issue is resolved. See
-`docs/identity-runbook.md` for the reproduction record and safety boundary.
-
-## 2. Infrastructure and cost gate
-
-Confirm the correct subscription and that no unexpected development resources already exist:
-
-```bash
-az account set --subscription 86dfb8ca-2e38-4abb-9072-e8d077af295a
-az account show --query '{subscription:id, tenant:tenantId, user:user.name}' --output table
-./scripts/preflight.sh
-az resource list \
-  --resource-group rg-soffortbackend-dev-wus2 \
-  --query '[].{name:name,type:type,location:location}' \
-  --output table
-```
-
-Review the infrastructure workflow with `apply=false`. Confirm What-If contains no Azure Front
-Door, WAF, NAT Gateway, AKS Automatic, more than two nodes, or an unapproved VM size. Then run it
-with `apply=true`. Record its reserved ingress IP and ACR/identity outputs in the protected GitHub
-`development` environment as described in `docs/operator-runbook.md`.
-
-Do not start a cluster automatically in the morning. Stop it after testing through the
-`cluster-lifecycle` workflow. Confirm the $150, $180, and $195 budget notifications exist before
-leaving billable compute running.
-
-## 3. GoDaddy DNS and TLS
-
-In GoDaddy DNS for `soffort.com`, create or update this record after Azure returns the ingress IP:
-
-| Type | Name | Value | TTL |
-|---|---|---|---|
-| A | `@` | `<reserved-ingress-ip>` | 600 seconds during validation |
-
-Wait for public DNS, then verify:
-
-```bash
-dig +short A soffort.com
-curl --fail --silent --show-error \
-  https://soffort.com/.well-known/oauth-protected-resource/mcp
-openssl s_client -connect soffort.com:443 -servername soffort.com </dev/null 2>/dev/null \
-  | openssl x509 -noout -subject -issuer -dates
-```
-
-The A record must equal the reserved ingress IP. TLS must be trusted, unexpired, and valid for
-`soffort.com`.
-
-## 4. Deployment verification
-
-Flux deploys immutable image digests; do not deploy `latest`. Verify reconciliation from an
-approved network path to the private AKS API:
-
-```bash
-flux get all --all-namespaces
-kubectl -n soffortbackend get deployment,pods,service
-kubectl -n soffortbackend rollout status deployment/soffortbackend --timeout=5m
-kubectl -n soffortbackend get pods -o wide
-```
-
-Expected state: two ready application replicas, no restarts, a ClusterIP application service, and
-healthy Flux resources.
-
-Verify the public security boundary without a token:
-
-```bash
-curl --include \
-  https://soffort.com/.well-known/oauth-protected-resource/mcp
-curl --include --request POST \
-  --header 'Content-Type: application/json' \
-  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"e2e-probe","version":"1"}}}' \
-  https://soffort.com/mcp
+dig +short soffort.com A
+curl --fail --silent https://soffort.com/.well-known/oauth-protected-resource/mcp
+curl --include --request POST https://soffort.com/mcp \
+  --header 'content-type: application/json' --data '{}'
 curl --include https://soffort.com/livez
 ```
 
-Expected results:
+Expected: apex resolves to `4.242.124.73`; metadata resource is exactly `https://soffort.com/mcp`; unauthenticated MCP returns 401 with the RFC 9728 metadata challenge; health is not publicly routed. Inspect the certificate in a browser and require a trusted, unexpired chain.
 
-- protected-resource metadata: 200, canonical resource, authorization server, and required scope;
-- unauthenticated MCP request: 401 and a `WWW-Authenticate` metadata challenge;
-- public `/livez`: not routed (404), never an application health response.
+## 3. Update and prepare the iPhone
 
-## 5. VS Code desktop
+1. Open `/Users/alphonsekurian/Code/Vault2/Permi.xcodeproj` and run the `SoffortApproval` scheme on the already enrolled physical iPhone. The installed app appears as **Permi** and retains the existing Entra session/device key.
+2. Sign in using the same External ID method/account used by VS Code. Test Apple first; repeat the authentication gate with email OTP separately.
+3. Allow notifications and confirm Settings says **This iPhone is linked**.
+4. In **Vault**, add fictional values:
+   - Personal email: `ava.test@example.invalid`
+   - Preferred name: `Ava Example`
+5. Authenticate to edit, reveal, and delete. Confirm a reveal disappears after 15 seconds and whenever the app backgrounds.
+6. Sign out and sign back into the same account; confirm the vault remains. Do not delete the vault yet.
 
-1. Install or update stable VS Code to 1.123 or later.
-2. Open this repository and inspect `.vscode/mcp.json`. It must contain the canonical URL and
-   committed public client ID; it must contain no client secret or bearer token.
-3. Run `Authentication: Remove Dynamic Authentication Providers` if an earlier failed MCP login is
-   cached. Also remove the server account through **Accounts > Manage Trusted MCP Servers** when
-   repeating a clean-login test.
-4. Open `.vscode/mcp.json` and select **Start**, or run **MCP: List Servers**, choose
-   `soffortbackend`, and start it.
-5. Review and trust the MCP server when prompted. The browser must use the configured External ID
-   tenant and return through `http://127.0.0.1:33418`.
-6. Open **MCP: List Servers > soffortbackend > Show Output**. Confirm initialization succeeds and
-   no token, code, email, or response body is logged.
-7. In Agent mode, ask: `Use soffortbackend hello_world with the name VS Code.` Approve the tool
-   call when prompted.
+## 4. Connect VS Code
 
-Expected tool result:
+Use VS Code 1.123+ and the committed `.vscode/mcp.json`. Start `soffortbackend`; the browser should identify the managed `ciamlogin.com` tenant and complete Apple or email sign-in. If an old token is cached, run **MCP: Reset Cached Tools** and restart the server.
+
+Confirm `tools/list` contains exactly:
+
+```text
+list_available_properties
+request_properties
+```
+
+No removed or legacy tool is acceptable.
+
+## 5. Discovery test
+
+1. Call `list_available_properties` with `{}`.
+2. Open the Permi request and approve.
+3. Require `status: approved` with metadata for the two populated fields.
+4. Confirm no `value` member and no fictional plaintext appears anywhere in the result.
+5. Repeat and deny. Require `{"status":"denied","properties":[]}`.
+
+## 6. Selective disclosure test
+
+Call `request_properties` with:
 
 ```json
 {
-  "message": "Hello, VS Code!",
-  "server": "soffortbackend"
+  "properties": [
+    "contact.personalEmail",
+    "identity.preferredName",
+    "vehicle.vin"
+  ],
+  "purpose": "Populate a fictional onboarding form"
 }
 ```
 
-Repeat with no name and expect `Hello, World!`. Repeat with a 101-character name and expect a
-validation error rather than truncation or a server failure.
+On iPhone, verify the purpose is verbatim, the first two values are available, VIN is **Not stored**, and all toggles initially are off. Select only Personal email and approve.
 
-## 6. Authorization checks
+Expected structured result:
 
-- Repeat the unauthenticated request and confirm 401, not a redirect or 200.
-- Use a correctly signed token without `soffortbackend.access` in an isolated test and confirm 403
-  plus `error="insufficient_scope"`. Never weaken the live API registration to create this test.
-- Confirm a token for another audience, tenant, or client is rejected with 401.
-- Confirm application logs contain only the request ID and non-identifying failure reason.
-
-These negative tests prove authz is enforced by the resource server rather than merely presenting a
-login page.
-
-## 7. `vscode.dev` and stateless behavior
-
-Open the repository through `vscode.dev`, start `soffortbackend`, and repeat the tool call. The OAuth
-callback must use `https://vscode.dev/redirect`. Alternate at least ten calls while observing pod
-logs; successful calls may land on either replica without a sticky session.
-
-## 8. Completion and shutdown
-
-Attach only sanitized evidence: versions, timestamps, status codes, non-secret claim checks, tool
-output, pod readiness, image digest, and CI/deployment URLs. Then stop the cluster with the manual
-`cluster-lifecycle` workflow and verify `powerState.code` is `Stopped`:
-
-```bash
-az aks show \
-  --resource-group rg-soffortbackend-dev-wus2 \
-  --name aks-soffortbackend-dev-wus2 \
-  --query powerState.code \
-  --output tsv
+```json
+{
+  "status": "partially_approved",
+  "properties": [
+    {
+      "key": "contact.personalEmail",
+      "display_name": "Personal email",
+      "value_type": "email",
+      "value": "ava.test@example.invalid"
+    }
+  ],
+  "denied_properties": ["identity.preferredName"],
+  "unavailable_properties": ["vehicle.vin"]
+}
 ```
 
-The test is complete only after both the functional result and cost-protection shutdown are
-recorded.
+The text content must contain only a count/status summary. Verify request order is preserved.
+
+## 7. Failure and recovery matrix
+
+| Test | Expected result |
+|---|---|
+| Deny every requested field | Structured `denied`; no tool exception |
+| Request only an unstored field and approve | Structured `unavailable` |
+| Unknown or duplicate key | Immediate MCP input error; no phone notification |
+| Purpose empty, >200, or containing a control character | Immediate MCP input error |
+| Ignore request for two minutes | Clear `approval_timed_out` tool error |
+| Force-quit app, send request, reopen app | Requests tab recovers it from `GET /v1/approvals` |
+| Disable notifications | Clear notification error, or inbox recovery when APNs was accepted before disabling |
+| Submit decision twice/from two phones | First valid decision remains authoritative |
+| Tamper result/signature/JWE/`kid` in an integration fixture | Rejected, no plaintext, no successful output |
+| Alternate backend replica between create/poll/decision | Same result; no sticky session dependency |
+
+Repeat authentication using email OTP. The iPhone and VS Code must use the same resulting External ID account; the service never links accounts using an email string.
+
+## 8. Privacy and cleanup
+
+Inspect application logs only for request IDs, status, timing, and error codes. Search for the fictional values and require no matches. Cosmos approval records may contain short-lived compact ciphertext, but never cleartext; they disappear after TTL.
+
+After all gates pass, remove legacy profile documents in two bounded steps:
+
+```bash
+uv run python scripts/cleanup-profiles.py --endpoint <cosmos-endpoint>
+uv run python scripts/cleanup-profiles.py --endpoint <cosmos-endpoint> \
+  --apply --expected-count <dry-run-count>
+```
+
+The command prints counts only and deletes exclusively `kind=profile`. It does not touch devices, challenges, or consent records.
+
+## 9. Rollback
+
+Revert the digest-only deployment commit and merge it; Flux restores the prior immutable image. If the iOS update must be rolled back, install the previous signed build. Do not rotate/delete the Key Vault disclosure key version while any two-minute request may still reference its `kid`; disable old versions only after the request/TTL window and a verified new-key E2E.
+
+Record only: date, tester, VS Code/Xcode/iOS versions, Git commits, deployed digest, pass/fail per section, p95/error-rate load-test summary, and sanitized failure codes.

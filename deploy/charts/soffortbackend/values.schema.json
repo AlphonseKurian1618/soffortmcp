@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["replicaCount", "image", "identity", "service", "resources", "autoscaling", "gateway", "rateLimit"],
+  "required": ["replicaCount", "image", "identity", "approval", "service", "resources", "autoscaling", "gateway", "rateLimit"],
   "properties": {
     "replicaCount": { "type": "integer", "const": 2 },
     "image": {
@@ -18,15 +18,37 @@
     "identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["issuer", "jwksUrl", "tenantId", "apiAudience", "vscodeClientId", "scopeValue", "scopeUri"],
+      "required": ["issuer", "jwksUrl", "tenantId", "apiAudience", "vscodeClientId", "iosClientId", "scopeValue", "scopeUri", "mobileScopeValue", "mobileScopeUri"],
       "properties": {
         "issuer": { "type": "string", "minLength": 1 },
         "jwksUrl": { "type": "string", "minLength": 1 },
         "tenantId": { "type": "string", "minLength": 1 },
         "apiAudience": { "type": "string", "minLength": 1 },
         "vscodeClientId": { "type": "string", "minLength": 1 },
+        "iosClientId": { "type": "string", "minLength": 1 },
         "scopeValue": { "type": "string", "const": "soffortbackend.access" },
-        "scopeUri": { "type": "string", "const": "https://soffort.com/mcp/soffortbackend.access" }
+        "scopeUri": { "type": "string", "const": "https://soffort.com/mcp/soffortbackend.access" },
+        "mobileScopeValue": { "type": "string", "const": "soffortbackend.mobile" },
+        "mobileScopeUri": { "type": "string", "const": "https://soffort.com/mcp/soffortbackend.mobile" }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cosmosEndpoint", "database", "container", "workloadClientId", "keyVaultUrl", "disclosureKeyName", "apnsSecretName", "apnsSecretVersion", "apnsKeyId", "apnsTeamId", "apnsTopic", "apnsEnvironment"],
+      "properties": {
+        "cosmosEndpoint": { "type": "string", "pattern": "^https://" },
+        "database": { "type": "string", "const": "soffortbackend" },
+        "container": { "type": "string", "const": "approval" },
+        "workloadClientId": { "type": "string", "minLength": 1 },
+        "keyVaultUrl": { "type": "string", "pattern": "^https://" },
+        "disclosureKeyName": { "type": "string", "const": "permi-disclosure" },
+        "apnsSecretName": { "type": "string", "const": "apns-private-key" },
+        "apnsSecretVersion": { "type": "string", "minLength": 1 },
+        "apnsKeyId": { "type": "string", "pattern": "^[A-Z0-9]{10}$" },
+        "apnsTeamId": { "type": "string", "const": "TTP26ZNL9Q" },
+        "apnsTopic": { "type": "string", "const": "com.soffort.aivault" },
+        "apnsEnvironment": { "type": "string", "const": "sandbox" }
       }
     },
     "service": {

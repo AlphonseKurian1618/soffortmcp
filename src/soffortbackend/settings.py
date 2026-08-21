@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CANONICAL_MCP_URL = "https://soffort.com/mcp"
 DEFAULT_SCOPE_URI = f"{CANONICAL_MCP_URL}/soffortbackend.access"
+DEFAULT_MOBILE_SCOPE_URI = f"{CANONICAL_MCP_URL}/soffortbackend.mobile"
 
 
 class Settings(BaseSettings):
@@ -34,8 +35,27 @@ class Settings(BaseSettings):
     entra_tenant_id: UUID
     entra_api_audience: str = Field(min_length=1, max_length=255)
     entra_vscode_client_id: UUID
+    entra_ios_client_id: UUID
     required_scope_value: str = Field(default="soffortbackend.access", min_length=1)
     required_scope_uri: str = Field(default=DEFAULT_SCOPE_URI, min_length=1)
+    mobile_scope_value: str = Field(default="soffortbackend.mobile", min_length=1)
+    mobile_scope_uri: str = Field(default=DEFAULT_MOBILE_SCOPE_URI, min_length=1)
+    cosmos_endpoint: AnyHttpUrl | None = None
+    cosmos_database: str = Field(default="soffortbackend", min_length=1, max_length=255)
+    cosmos_container: str = Field(default="approval", min_length=1, max_length=255)
+    azure_workload_client_id: UUID | None = None
+    key_vault_url: AnyHttpUrl | None = None
+    disclosure_key_name: str = Field(default="permi-disclosure", min_length=1, max_length=127)
+    apns_private_key_secret_name: str = Field(
+        default="apns-private-key", min_length=1, max_length=127
+    )
+    apns_private_key_secret_version: str | None = None
+    apns_key_id: str | None = Field(default=None, pattern=r"^[A-Z0-9]{10}$")
+    apns_team_id: str = Field(default="TTP26ZNL9Q", pattern=r"^[A-Z0-9]{10}$")
+    apns_topic: str = Field(default="com.soffort.aivault", min_length=1, max_length=255)
+    apns_environment: Literal["sandbox", "production"] = "sandbox"
+    approval_timeout_seconds: int = Field(default=120, ge=5, le=300)
+    approval_poll_interval_seconds: float = Field(default=0.5, ge=0.05, le=5.0)
     allowed_hosts_csv: str = "soffort.com"
     allowed_origins_csv: str = "https://vscode.dev"
     bind_host: str = "0.0.0.0"  # noqa: S104 - the container must accept Service traffic.
@@ -61,6 +81,12 @@ class Settings(BaseSettings):
                 raise ValueError(f"public_url must be exactly {CANONICAL_MCP_URL}")
             if urlparse(issuer).scheme != "https" or urlparse(jwks_url).scheme != "https":
                 raise ValueError("Entra issuer and JWKS URLs must use HTTPS")
+            if self.cosmos_endpoint is None:
+                raise ValueError("cosmos_endpoint is required outside tests")
+            if self.azure_workload_client_id is None:
+                raise ValueError("azure_workload_client_id is required outside tests")
+            if self.key_vault_url is None or self.apns_key_id is None:
+                raise ValueError("Key Vault and APNs key configuration are required outside tests")
 
         # Apple is an upstream identity provider for Entra, not an MCP token
         # issuer. Rejecting it here prevents a future operator from accepting an
@@ -71,6 +97,10 @@ class Settings(BaseSettings):
             raise ValueError("Apple private keys belong in Entra, never in this workload")
         if not self.required_scope_uri.startswith(f"{public_url}/"):
             raise ValueError("required_scope_uri must be beneath the canonical MCP resource")
+        if not self.mobile_scope_uri.startswith(f"{public_url}/"):
+            raise ValueError("mobile_scope_uri must be beneath the canonical MCP resource")
+        if self.entra_ios_client_id == self.entra_vscode_client_id:
+            raise ValueError("VS Code and iOS must use separate public-client registrations")
         if not self.allowed_hosts or not self.allowed_origins:
             raise ValueError("Host and Origin allowlists cannot be empty")
         return self

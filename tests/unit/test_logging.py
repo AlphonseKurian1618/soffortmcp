@@ -10,11 +10,11 @@ from soffortbackend.logging import JsonFormatter, RequestContextMiddleware, conf
 
 
 def test_json_formatter_emits_only_selected_context() -> None:
-    record = logging.LogRecord("test", logging.INFO, __file__, 1, "hello %s", ("world",), None)
+    record = logging.LogRecord("test", logging.INFO, __file__, 1, "safe log %s", ("message",), None)
     record.authorization = "must-not-leak"
     payload = json.loads(JsonFormatter().format(record))
 
-    assert payload["message"] == "hello world"
+    assert payload["message"] == "safe log message"
     assert "authorization" not in payload
 
 

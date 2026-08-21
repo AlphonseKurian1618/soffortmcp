@@ -1,15 +1,17 @@
 """ASGI application composition for the authenticated MCP server."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Protocol, cast
+from typing import Annotated, Protocol, cast
 
 from mcp.server import MCPServer
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import CallToolResult
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -17,10 +19,32 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
+from soffortbackend.approval import ApprovalError, ApprovalService
 from soffortbackend.auth import EntraTokenVerifier
+from soffortbackend.catalog import PropertyKey
+from soffortbackend.device_security import normalize_purpose
+from soffortbackend.disclosure import (
+    DisclosureDecryptor,
+    FakeDisclosureDecryptor,
+    KeyVaultDisclosureDecryptor,
+)
 from soffortbackend.logging import RequestContextMiddleware
+from soffortbackend.mobile_api import register_mobile_routes
+from soffortbackend.models import Principal
+from soffortbackend.notifications import (
+    APNsApprovalNotifier,
+    ApprovalNotifier,
+    FakeApprovalNotifier,
+)
 from soffortbackend.settings import Settings
-from soffortbackend.tools import hello_world
+from soffortbackend.store import ApprovalStore, CosmosApprovalStore, InMemoryApprovalStore
+from soffortbackend.tools import (
+    ListAvailablePropertiesOutput,
+    RequestPropertiesOutput,
+    approval_error,
+    list_result,
+    request_result,
+)
 
 MCP_BODY_LIMIT_BYTES = 1024 * 1024
 
@@ -50,23 +74,56 @@ def create_app(
     settings: Settings,
     *,
     token_verifier: ManagedTokenVerifier | None = None,
+    approval_store: ApprovalStore | None = None,
+    notifier: ApprovalNotifier | None = None,
+    disclosure_decryptor: DisclosureDecryptor | None = None,
 ) -> Starlette:
     """Create the authenticated, stateless MCP ASGI application."""
     verifier = token_verifier or cast(ManagedTokenVerifier, EntraTokenVerifier(settings))
+    store = approval_store or (
+        InMemoryApprovalStore() if settings.environment == "test" else CosmosApprovalStore(settings)
+    )
+    push = notifier or (
+        FakeApprovalNotifier() if settings.environment == "test" else APNsApprovalNotifier(settings)
+    )
+    disclosure = disclosure_decryptor or (
+        FakeDisclosureDecryptor()
+        if settings.environment == "test"
+        else KeyVaultDisclosureDecryptor(settings)
+    )
+    approvals = ApprovalService(settings, store, push, disclosure)
 
     @asynccontextmanager
-    async def lifespan(_: MCPServer[None]) -> AsyncIterator[None]:
-        await verifier.start()
+    async def lifespan(_: MCPServer[None]) -> AsyncGenerator[None]:
+        verifier_started = store_started = push_started = disclosure_started = False
         try:
+            await verifier.start()
+            verifier_started = True
+            await store.start()
+            store_started = True
+            await push.start()
+            push_started = True
+            await disclosure.start()
+            disclosure_started = True
             yield None
         finally:
-            await verifier.close()
+            if disclosure_started:
+                await disclosure.close()
+            if push_started:
+                await push.close()
+            if store_started:
+                await store.close()
+            if verifier_started:
+                await verifier.close()
 
     server: MCPServer[None] = MCPServer(
         name="soffortbackend",
         title="Soffort Backend",
-        description="An authenticated hello-world MCP resource server.",
-        instructions="Use hello_world to return a short greeting.",
+        description="Phone-consented access to the user's local Permi vault.",
+        instructions=(
+            "Discover populated property metadata, then request exact properties "
+            "for a stated purpose."
+        ),
         website_url="https://soffort.com",
         version="0.1.0",
         auth=AuthSettings(
@@ -78,11 +135,60 @@ def create_app(
         lifespan=lifespan,
         log_level=settings.log_level,
     )
+
+    def vscode_principal() -> Principal:
+        token = get_access_token()
+        principal = Principal.from_access_token(token) if token is not None else None
+        if principal is None or principal.client_kind != "vscode":
+            approval_error("approval_unavailable")
+        return principal
+
+    async def list_available_properties() -> Annotated[
+        CallToolResult, ListAvailablePropertiesOutput
+    ]:
+        """Ask the iPhone before revealing which catalog properties are populated."""
+        try:
+            approval = await approvals.request_available_properties(vscode_principal())
+        except ApprovalError as error:
+            approval_error(error.code.value)
+        return list_result(approval)
+
     server.tool(
-        name="hello_world",
-        description="Return a friendly greeting from soffortbackend.",
+        name="list_available_properties",
+        description=(
+            "Ask the user's iPhone for permission to list populated Permi property metadata. "
+            "This never returns property values."
+        ),
         structured_output=True,
-    )(hello_world)
+    )(list_available_properties)
+
+    async def request_properties(
+        properties: list[PropertyKey],
+        purpose: str,
+    ) -> Annotated[CallToolResult, RequestPropertiesOutput]:
+        """Request an explicitly selected subset of local vault values."""
+        if not 1 <= len(properties) <= len(list(PropertyKey)):
+            raise ValueError("properties must contain 1 to 13 catalog keys")
+        if len(set(properties)) != len(properties):
+            raise ValueError("properties cannot contain duplicates")
+        normalized_purpose = normalize_purpose(purpose)
+        try:
+            approval, values = await approvals.request_properties(
+                vscode_principal(), tuple(properties), normalized_purpose
+            )
+        except ApprovalError as error:
+            approval_error(error.code.value)
+        return request_result(approval, values)
+
+    server.tool(
+        name="request_properties",
+        description=(
+            "Ask the user to selectively approve exact Permi property values "
+            "for a short stated purpose."
+        ),
+        structured_output=True,
+    )(request_properties)
+    register_mobile_routes(server, settings, store, approvals)
 
     # SDK custom routes are intentionally unauthenticated. Kubernetes reaches
     # these through the ClusterIP, while the public Gateway routes only /mcp and
@@ -91,7 +197,7 @@ def create_app(
         return JSONResponse({"status": "ok"})
 
     async def readyz(_: Request) -> Response:
-        status = 200 if verifier.ready else 503
+        status = 200 if verifier.ready and store.ready and push.ready and disclosure.ready else 503
         payload = {"status": "ready" if status == 200 else "not_ready"}
         return JSONResponse(payload, status_code=status)
 
@@ -142,4 +248,6 @@ def create_app(
     app.add_middleware(RequestContextMiddleware)
     app.state.mcp_server = server
     app.state.token_verifier = verifier
+    app.state.approval_store = store
+    app.state.approval_notifier = push
     return app

@@ -10,6 +10,8 @@ from soffortbackend.settings import Settings
 
 TENANT_ID = UUID("11111111-1111-4111-8111-111111111111")
 CLIENT_ID = UUID("22222222-2222-4222-8222-222222222222")
+IOS_CLIENT_ID = UUID("33333333-3333-4333-8333-333333333333")
+OBJECT_ID = "44444444-4444-4444-8444-444444444444"
 
 
 class FakeTokenVerifier:
@@ -25,15 +27,29 @@ class FakeTokenVerifier:
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Accept one non-secret fixture token."""
-        if token != "valid-test-token":
+        if token == "valid-test-token":
+            client_id = CLIENT_ID
+            scopes = ["http://testserver/mcp/soffortbackend.access"]
+            client_kind = "vscode"
+        elif token == "valid-mobile-token":
+            client_id = IOS_CLIENT_ID
+            scopes = ["http://testserver/mcp/soffortbackend.mobile"]
+            client_kind = "ios"
+        else:
             return None
         return AccessToken(
             token=token,
-            client_id=str(CLIENT_ID),
-            scopes=["http://testserver/mcp/soffortbackend.access"],
+            client_id=str(client_id),
+            scopes=scopes,
             expires_at=4_102_444_800,
             resource="http://testserver/mcp",
-            subject="test-subject",
+            subject=OBJECT_ID,
+            claims={
+                "tid": str(TENANT_ID),
+                "oid": OBJECT_ID,
+                "sub": "pairwise-test-subject",
+                "client_kind": client_kind,
+            },
         )
 
 
@@ -49,7 +65,9 @@ def settings() -> Settings:
         entra_tenant_id=TENANT_ID,
         entra_api_audience="api-audience",
         entra_vscode_client_id=CLIENT_ID,
+        entra_ios_client_id=IOS_CLIENT_ID,
         required_scope_uri="http://testserver/mcp/soffortbackend.access",
+        mobile_scope_uri="http://testserver/mcp/soffortbackend.mobile",
         allowed_hosts_csv="testserver",
         allowed_origins_csv="https://vscode.dev",
     )

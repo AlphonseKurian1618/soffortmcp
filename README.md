@@ -1,88 +1,52 @@
 # soffortbackend
 
-`soffortbackend` is a small, production-shaped [Model Context Protocol](https://modelcontextprotocol.io/) resource server. It publishes one authenticated `hello_world` tool at `https://soffort.com/mcp` and is designed to run as a stateless, horizontally scalable workload in Azure Kubernetes Service (AKS).
+`soffortbackend` is the authenticated MCP resource server for the Permi iPhone vault. It is served at `https://soffort.com/mcp` and exposes exactly two tools:
 
-Microsoft Entra External ID is configured for Apple and passwordless email one-time passcodes.
-Apple is the verified development path; the managed email provider page has a known issue recorded
-in `docs/identity-runbook.md`. The server accepts only short-lived Entra API access tokens; it never
-receives Apple tokens, the Apple private key, an email OTP, or an end-user password.
+- `list_available_properties()` asks the phone to disclose value-free metadata for populated, non-expired catalog fields.
+- `request_properties(properties, purpose)` asks the phone to selectively release catalog values for the stated purpose.
 
-## API contract
+Every call requires a Microsoft Entra External ID access token and a fresh, signed iPhone decision. Entra federates Apple and email OTP authentication; Apple tokens, email codes, and passwords never reach this service. Approved values remain encrypted from the phone to an Azure Key Vault RSA key and are decrypted only in pod memory.
 
-| Path | Exposure | Purpose |
+## Public interfaces
+
+| Path | Access | Purpose |
 |---|---|---|
-| `POST /mcp` | Public, bearer token required | Stateless Streamable HTTP MCP |
+| `POST /mcp` | `soffortbackend.access` | Stateless Streamable HTTP MCP |
 | `GET /.well-known/oauth-protected-resource/mcp` | Public | RFC 9728 discovery |
-| `GET /livez` and `GET /readyz` | Cluster-only | Kubernetes probes |
+| `GET /.well-known/oauth-protected-resource/v1` | Public | iPhone API OAuth discovery |
+| `/v1/devices/*`, `/v1/approvals*` | `soffortbackend.mobile` | Device enrollment, inbox recovery, signed decisions |
+| `GET /livez`, `GET /readyz` | Cluster only | Kubernetes probes |
 
-The only tool is `hello_world(name: str = "World")`. It returns both MCP text content and this structured result:
-
-```json
-{"message":"Hello, World!","server":"soffortbackend"}
-```
+The catalog is closed to 13 reviewed fields; unknown and duplicate keys fail before APNs delivery. Denied and unavailable values are structured business outcomes. Notification failure, timeout, bad signatures, and invalid ciphertext are value-free MCP errors. See [the mobile protocol](docs/mobile-approval-api.md).
 
 ## Local validation
 
-Install [uv](https://docs.astral.sh/uv/), then run:
-
 ```bash
 uv sync --extra dev --frozen
-uv run ruff check .
 uv run ruff format --check .
+uv run ruff check .
 uv run pyright
 uv run pytest
 ```
 
-Running the HTTP server requires real Entra resource-server settings. Copy `.env.example` to `.env`, replace every placeholder with output from the identity bootstrap, and run:
+Copy `.env.example` to `.env` and supply real Entra, Cosmos, APNs, workload identity, and Key Vault settings to run `uv run soffortbackend`. There is intentionally no authentication bypass.
+
+## Deployment
+
+Development uses AKS Free in West US 2, two scheduled PAYG ARM64 nodes, ACR Basic, direct Traefik ingress, cert-manager, serverless Cosmos DB, Standard Key Vault, and Flux. GoDaddy remains authoritative for `soffort.com`. Azure Front Door, WAF, and private origin are production TODOs and are not provisioned.
 
 ```bash
-uv run soffortbackend
-```
-
-There is intentionally no local authentication bypass. Unit tests inject a deterministic verifier, while manual HTTP testing uses a real Entra access token.
-
-## Identity setup
-
-1. Create or select a Microsoft Entra External ID tenant.
-2. Run `scripts/bootstrap-identity.py` interactively as an administrator. It creates the API and public-client registrations idempotently and prints non-secret deployment outputs.
-3. In Apple Developer, create the primary App ID, Services ID, Sign in with Apple key, and register the exact federation return URL displayed by Entra.
-4. Configure Apple and Email One Time Passcode in the External ID user flow, enable open
-   self-service registration, and associate `soffortbackend-vscode` with that flow.
-5. Upload or derive Apple material only through the Entra administration flow. Never copy the `.p8` file into this repository, AKS, GitHub Actions, or chat.
-6. Grant the VS Code public client admin consent to `soffortbackend.access` and perform the VS Code OAuth compatibility gate described in `docs/identity-runbook.md`.
-
-Upstream authentication is intentionally not hidden behind application code. Microsoft Entra owns
-the Apple callback and email-code verification, then issues the audience-bound access token that
-this service verifies.
-
-## Azure deployment
-
-The development topology uses West US 2, AKS Free management tier, two scheduled PAYG ARM64 nodes, ACR Basic, direct Traefik ingress, cert-manager, and Flux. GoDaddy remains authoritative for `soffort.com`; deployment outputs the static ingress IP for a manual apex `A` record. It deliberately excludes Azure Front Door, WAF, NAT Gateway, databases, and paid monitoring.
-
-Deployment sequence:
-
-```bash
-az login
 az account set --subscription 86dfb8ca-2e38-4abb-9072-e8d077af295a
 ./scripts/preflight.sh
 ./scripts/bootstrap-azure.sh --budget-email you@example.com
 ```
 
-The infrastructure workflow never reaches the private Kubernetes API. Flux reads this public Git
-repository over HTTPS and reconciles `deploy/flux/dev`; GitHub Actions builds and scans an
-immutable image, then opens a digest-only deployment pull request.
+GitHub Actions publishes a scanned multi-architecture image. A digest-only pull request drives Flux; rollback is a digest commit revert. See [the operator runbook](docs/operator-runbook.md) and [the physical E2E runbook](docs/e2e-test-runbook.md).
 
-See `docs/operator-runbook.md` for start/stop, deployment, rollback, DNS, TLS, and incident procedures. Use `docs/e2e-test-runbook.md` for the complete authenticated VS Code acceptance test. Current development infrastructure has no control-plane SLA and is intentionally unavailable whenever the cluster is stopped.
+## VS Code and privacy
 
-## VS Code
+`.vscode/mcp.json` contains the non-secret public client ID. VS Code 1.123+ opens the managed External ID sign-in flow. The service accepts only exact-issuer, audience-, client-, tenant-, and scope-bound Entra tokens.
 
-The committed `.vscode/mcp.json` contains the generated non-secret public client ID. VS Code 1.123
-or later opens the browser for managed External ID authentication on first use.
+Vault values, vault ownership identifiers, bearer tokens, request/response bodies, and plaintext are never logged. The encrypted vault remains solely on the iPhone and survives sign-out; switching accounts requires the current owner to authenticate and crypto-shred it.
 
-The real compatibility test is a release gate: if current VS Code cannot request an Entra token with the expected resource, audience, and scope, do not add an in-process OAuth proxy. Record the failing request/response metadata without tokens and revisit the managed identity-provider choice.
-
-## Cost boundary
-
-The target is approximately USD $95–130 per month when the cluster runs about twelve weekday hours. A GitHub workflow stops it after 19:00 America/Los_Angeles, but Azure budgets are alerts rather than a hard cap. Leaving two nodes running continuously is expected to exceed the $200 monthly limit.
-
-Azure Front Door Premium and WAF are a documented future production migration, not development dependencies. See `docs/adr/0004-future-production-front-door.md`.
+The target development spend is USD $95–130/month with scheduled shutdown. Azure budget alerts do not enforce a hard cap; leaving both nodes running continuously can exceed $200.

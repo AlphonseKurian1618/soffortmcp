@@ -24,6 +24,7 @@ audit:
 bicep:
 	az bicep build --file infra/bootstrap.bicep --outfile /tmp/soffort-bootstrap.json
 	az bicep build --file infra/main.bicep --outfile /tmp/soffort-main.json
+	az bicep build --file infra/phase2-bootstrap.bicep --outfile /tmp/soffort-phase2.json
 	$(UV) run python scripts/check-cost-guardrails.py /tmp/soffort-main.json
 
 helm:
@@ -35,4 +36,3 @@ container:
 	docker build --platform linux/arm64 -t soffortbackend:test .
 
 check: lint typecheck test bicep helm
-

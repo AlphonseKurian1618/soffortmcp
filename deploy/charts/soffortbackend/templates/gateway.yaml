@@ -68,6 +68,12 @@ spec:
         - path:
             type: Exact
             value: /.well-known/oauth-protected-resource/mcp
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource/v1
+        - path:
+            type: PathPrefix
+            value: /v1
       filters:
         - type: ExtensionRef
           extensionRef:
@@ -79,6 +85,11 @@ spec:
             group: traefik.io
             kind: Middleware
             name: soffortbackend-rate-limit
+      # The phone has two minutes to decide. Keep a small network margin while
+      # remaining bounded so abandoned requests do not consume ingress forever.
+      timeouts:
+        request: 150s
+        backendRequest: 145s
       backendRefs:
         - name: {{ include "soffortbackend.fullname" . }}
           port: {{ .Values.service.port }}

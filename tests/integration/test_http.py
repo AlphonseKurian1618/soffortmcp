@@ -1,11 +1,19 @@
 """HTTP-level tests for discovery, authorization, and transport hardening."""
 
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from uuid import uuid7
+
 import httpx
 import pytest
+from conftest import OBJECT_ID, TENANT_ID
 from mcp.server.auth.provider import AccessToken
 
 from soffortbackend.app import create_app
+from soffortbackend.models import Approval, ApprovalStatus, Device
+from soffortbackend.notifications import DeliveryResult
 from soffortbackend.settings import Settings
+from soffortbackend.store import InMemoryApprovalStore
 
 
 class WrongScopeVerifier:
@@ -31,6 +39,39 @@ class WrongScopeVerifier:
             resource="http://testserver/mcp",
             subject="test-subject",
         )
+
+
+class AutoApproveNotifier:
+    """Accept a fixture push and atomically approve before the MCP poll."""
+
+    ready = True
+
+    def __init__(self, store: InMemoryApprovalStore) -> None:
+        self.store = store
+
+    async def start(self) -> None:
+        """Match provider lifecycle."""
+
+    async def close(self) -> None:
+        """Match provider lifecycle."""
+
+    async def send_approval(self, approval: Approval, devices: Sequence[Device]) -> DeliveryResult:
+        persisted = await self.store.get_approval(approval.partition_key, approval.approval_id)
+        assert persisted is not None
+        await self.store.decide_approval(
+            persisted,
+            status=ApprovalStatus.APPROVED,
+            device_id=devices[0].device_id,
+            decision_id=str(uuid7()),
+            decided_at=datetime.now(UTC),
+            available_keys=("contact.personalEmail",),
+            approved_keys=(),
+            denied_keys=(),
+            unavailable_keys=(),
+            compact_jwe=None,
+            result_hash="fixture-result-hash",
+        )
+        return DeliveryResult((devices[0].device_id,), ())
 
 
 @pytest.mark.asyncio
@@ -146,7 +187,24 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
     fake_verifier,
 ) -> None:
     """Exercise the 2026 single-exchange profile through the real HTTP boundary."""
-    app = create_app(settings, token_verifier=fake_verifier)
+    store = InMemoryApprovalStore()
+    partition_key = f"{TENANT_ID}:{OBJECT_ID}"
+    device = Device(
+        partition_key=partition_key,
+        device_id=str(uuid7()),
+        public_jwk={"kty": "EC", "crv": "P-256", "x": "fixture", "y": "fixture"},
+        apns_token="ab" * 32,
+        apns_environment="sandbox",
+        notifications_enabled=True,
+        updated_at=datetime.now(UTC),
+    )
+    store.devices[(partition_key, device.device_id)] = device
+    app = create_app(
+        settings,
+        token_verifier=fake_verifier,
+        approval_store=store,
+        notifier=AutoApproveNotifier(store),
+    )
     headers = {
         "Authorization": "Bearer valid-test-token",
         "Accept": "application/json, text/event-stream",
@@ -175,13 +233,16 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
             )
             called = await client.post(
                 "/mcp",
-                headers={"Mcp-Method": "tools/call", "Mcp-Name": "hello_world"},
+                headers={
+                    "Mcp-Method": "tools/call",
+                    "Mcp-Name": "list_available_properties",
+                },
                 json={
                     "jsonrpc": "2.0",
                     "id": 2,
                     "method": "tools/call",
                     "params": {
-                        "name": "hello_world",
+                        "name": "list_available_properties",
                         "arguments": {},
                         "_meta": modern_meta,
                     },
@@ -189,14 +250,86 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
             )
 
     assert listed.status_code == 200, listed.text
-    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == ["hello_world"]
+    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == [
+        "list_available_properties",
+        "request_properties",
+    ]
     assert called.status_code == 200
     result = called.json()["result"]
     assert result["structuredContent"] == {
-        "message": "Hello, World!",
-        "server": "soffortbackend",
+        "status": "approved",
+        "properties": [
+            {
+                "key": "contact.personalEmail",
+                "display_name": "Personal email",
+                "value_type": "email",
+                "sensitivity": "moderate",
+            }
+        ],
     }
-    assert result["content"] == [{"type": "text", "text": "Hello, World!"}]
+    assert result["content"] == [
+        {
+            "type": "text",
+            "text": "The user approved discovery of 1 available properties.",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_expected_approval_failure_is_a_meaningful_mcp_tool_error(
+    settings: Settings,
+    fake_verifier,
+) -> None:
+    """Prevent approval failures from being masked by output-schema validation."""
+    app = create_app(settings, token_verifier=fake_verifier)
+    headers = {
+        "Authorization": "Bearer valid-test-token",
+        "Accept": "application/json, text/event-stream",
+        "MCP-Protocol-Version": "2026-07-28",
+    }
+    modern_meta = {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientInfo": {"name": "test-client", "version": "1"},
+        "io.modelcontextprotocol/clientCapabilities": {},
+    }
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+            headers=headers,
+        ) as client:
+            called = await client.post(
+                "/mcp",
+                headers={
+                    "Mcp-Method": "tools/call",
+                    "Mcp-Name": "list_available_properties",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "list_available_properties",
+                        "arguments": {},
+                        "_meta": modern_meta,
+                    },
+                },
+            )
+
+    assert called.status_code == 200
+    result = called.json()["result"]
+    assert result["isError"] is True
+    assert result["content"] == [
+        {
+            "type": "text",
+            "text": (
+                "Error executing tool list_available_properties: No iPhone is linked. "
+                "Open Permi and link this iPhone, then try again."
+            ),
+        }
+    ]
+    assert "structuredContent" not in result
+    assert "validation error" not in called.text
 
 
 @pytest.mark.asyncio
@@ -238,7 +371,10 @@ async def test_handshake_protocol_initializes_and_lists_tool(
     assert initialized.status_code == 200, initialized.text
     assert initialized.json()["result"]["protocolVersion"] == "2025-11-25"
     assert listed.status_code == 200, listed.text
-    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == ["hello_world"]
+    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == [
+        "list_available_properties",
+        "request_properties",
+    ]
 
 
 @pytest.mark.asyncio
