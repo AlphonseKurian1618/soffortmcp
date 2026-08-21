@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     cosmos_container: str = Field(default="approval", min_length=1, max_length=255)
     azure_workload_client_id: UUID | None = None
     key_vault_url: AnyHttpUrl | None = None
+    disclosure_key_name: str = Field(default="permi-disclosure", min_length=1, max_length=127)
     apns_private_key_secret_name: str = Field(
         default="apns-private-key", min_length=1, max_length=127
     )
@@ -53,7 +54,7 @@ class Settings(BaseSettings):
     apns_team_id: str = Field(default="TTP26ZNL9Q", pattern=r"^[A-Z0-9]{10}$")
     apns_topic: str = Field(default="com.soffort.aivault", min_length=1, max_length=255)
     apns_environment: Literal["sandbox", "production"] = "sandbox"
-    approval_timeout_seconds: int = Field(default=60, ge=5, le=300)
+    approval_timeout_seconds: int = Field(default=120, ge=5, le=300)
     approval_poll_interval_seconds: float = Field(default=0.5, ge=0.05, le=5.0)
     allowed_hosts_csv: str = "soffort.com"
     allowed_origins_csv: str = "https://vscode.dev"

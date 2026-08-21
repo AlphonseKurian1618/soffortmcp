@@ -1,4 +1,4 @@
-"""Application service coordinating MCP calls, devices, APNs, and decisions."""
+"""Application service coordinating MCP consent, APNs, and signed decisions."""
 
 from __future__ import annotations
 
@@ -12,26 +12,34 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import uuid7
 
+from soffortbackend.catalog import PropertyKey
 from soffortbackend.device_security import decision_message, verify_signature
+from soffortbackend.disclosure import (
+    DisclosedProperty,
+    DisclosureDecryptor,
+    result_manifest_hash,
+)
 from soffortbackend.models import Approval, ApprovalStatus, Principal, StoreConflict
 from soffortbackend.notifications import ApprovalNotifier, NotificationUnavailable
 from soffortbackend.settings import Settings
 from soffortbackend.store import ApprovalStore
 
+LIST_TOOL = "list_available_properties"
+REQUEST_TOOL = "request_properties"
+
 
 class ApprovalErrorCode(StrEnum):
-    """Stable, value-free outcomes safe to expose to an MCP caller."""
+    """Stable, value-free failures safe to expose to an MCP caller."""
 
-    PROFILE_REQUIRED = "profile_required"
     PHONE_NOT_LINKED = "phone_not_linked"
     NOTIFICATIONS_UNAVAILABLE = "notifications_unavailable"
-    APPROVAL_DENIED = "approval_denied"
     APPROVAL_TIMED_OUT = "approval_timed_out"
     APPROVAL_UNAVAILABLE = "approval_unavailable"
+    DISCLOSURE_INVALID = "disclosure_invalid"
 
 
 class ApprovalError(Exception):
-    """Expected approval failure carrying only a public reason code."""
+    """Expected consent failure carrying only a public reason code."""
 
     def __init__(self, code: ApprovalErrorCode) -> None:
         """Create an expected failure from its stable public code."""
@@ -40,42 +48,80 @@ class ApprovalError(Exception):
 
 
 class ApprovalService:
-    """Coordinate a single-use phone approval without process-local sessions."""
+    """Coordinate one-time phone decisions without process-local sessions."""
 
     def __init__(
         self,
         settings: Settings,
         store: ApprovalStore,
         notifier: ApprovalNotifier,
+        disclosure: DisclosureDecryptor,
     ) -> None:
-        """Bind the workflow to validated settings and shared adapters."""
+        """Bind the workflow to shared storage, push, and disclosure adapters."""
         self.settings = settings
         self.store = store
         self.notifier = notifier
+        self.disclosure = disclosure
 
-    async def request_hello_world(self, principal: Principal) -> str:
-        """Wait for an iPhone decision and return the approved profile snapshot."""
+    async def request_available_properties(self, principal: Principal) -> Approval:
+        """Ask the phone to disclose only its populated catalog manifest."""
+        return await self._request(
+            principal,
+            tool_name=LIST_TOOL,
+            purpose="List the properties currently available in this Permi vault.",
+            requested_keys=(),
+            arguments={},
+        )
+
+    async def request_properties(
+        self,
+        principal: Principal,
+        requested_keys: tuple[PropertyKey, ...],
+        purpose: str,
+    ) -> tuple[Approval, tuple[DisclosedProperty, ...]]:
+        """Ask for selected local values and decrypt only an approved JWE."""
+        raw_keys = tuple(key.value for key in requested_keys)
+        approval = await self._request(
+            principal,
+            tool_name=REQUEST_TOOL,
+            purpose=purpose,
+            requested_keys=raw_keys,
+            arguments={"properties": list(raw_keys), "purpose": purpose},
+        )
+        if approval.status is ApprovalStatus.DENIED or not approval.approved_keys:
+            return approval, ()
+        try:
+            values = await self.disclosure.decrypt(approval)
+        except Exception as error:
+            # Azure/provider details and ciphertext never become MCP text.
+            raise ApprovalError(ApprovalErrorCode.DISCLOSURE_INVALID) from error
+        return approval, values
+
+    async def _request(
+        self,
+        principal: Principal,
+        *,
+        tool_name: str,
+        purpose: str,
+        requested_keys: tuple[str, ...],
+        arguments: dict[str, object],
+    ) -> Approval:
         approval: Approval | None = None
         try:
-            profile = await self.store.get_profile(principal.partition_key)
-            if profile is None:
-                raise ApprovalError(ApprovalErrorCode.PROFILE_REQUIRED)
             devices = await self.store.list_active_devices(principal.partition_key)
             if not devices:
                 raise ApprovalError(ApprovalErrorCode.PHONE_NOT_LINKED)
-
             now = datetime.now(UTC)
-            arguments_hash = _hash_arguments({})
             approval = Approval(
                 partition_key=principal.partition_key,
                 approval_id=str(uuid7()),
                 event_id=str(uuid7()),
                 nonce=_random_nonce(),
-                tool_name="hello_world",
-                arguments_hash=arguments_hash,
+                tool_name=tool_name,
+                arguments_hash=_hash_arguments(arguments),
                 requester="VS Code",
-                display_name_snapshot=profile.display_name,
-                profile_version=profile.version,
+                purpose=purpose,
+                requested_keys=requested_keys,
                 created_at=now,
                 expires_at=now + timedelta(seconds=self.settings.approval_timeout_seconds),
             )
@@ -102,8 +148,6 @@ class ApprovalService:
                 await self._best_effort_close(approval, ApprovalStatus.CANCELLED)
             raise
         except Exception as error:
-            # Transport details, Cosmos bodies, device IDs, and profile names
-            # remain server-only. The caller receives one closed failure code.
             raise ApprovalError(ApprovalErrorCode.APPROVAL_UNAVAILABLE) from error
 
     async def decide(
@@ -114,10 +158,16 @@ class ApprovalService:
         device_id: str,
         decision_id: str,
         decision: str,
+        available_keys: tuple[str, ...],
+        approved_keys: tuple[str, ...],
+        denied_keys: tuple[str, ...],
+        unavailable_keys: tuple[str, ...],
+        compact_jwe: str | None,
+        result_hash: str,
         issued_at: int,
         signature: str,
     ) -> Approval:
-        """Verify a device-bound decision and conditionally commit the first one."""
+        """Verify a result-bound device decision and commit the first writer."""
         approval = await self.store.get_approval(principal.partition_key, approval_id)
         device = await self.store.get_device(principal.partition_key, device_id)
         if approval is None or device is None or not device.notifications_enabled:
@@ -128,13 +178,31 @@ class ApprovalService:
                 approval.status is desired
                 and approval.decision_id == decision_id
                 and approval.decided_by_device_id == device_id
+                and approval.result_hash == result_hash
             ):
                 return approval
             raise StoreConflict("approval was already decided")
         if approval.expired:
             await self._best_effort_close(approval, ApprovalStatus.EXPIRED)
             raise StoreConflict("approval expired")
-
+        self._validate_result(
+            approval,
+            decision=decision,
+            available_keys=available_keys,
+            approved_keys=approved_keys,
+            denied_keys=denied_keys,
+            unavailable_keys=unavailable_keys,
+            compact_jwe=compact_jwe,
+        )
+        expected_hash = result_manifest_hash(
+            available_keys=available_keys,
+            approved_keys=approved_keys,
+            denied_keys=denied_keys,
+            unavailable_keys=unavailable_keys,
+            compact_jwe=compact_jwe,
+        )
+        if result_hash != expected_hash:
+            raise ValueError("result_hash does not match the consent manifest")
         message = decision_message(
             tenant_id=principal.tenant_id,
             object_id=principal.object_id,
@@ -144,6 +212,7 @@ class ApprovalService:
             tool_name=approval.tool_name,
             arguments_hash=approval.arguments_hash,
             decision=decision,
+            result_hash=result_hash,
             issued_at=issued_at,
         )
         verify_signature(device.public_jwk, message, signature)
@@ -153,27 +222,63 @@ class ApprovalService:
             device_id=device_id,
             decision_id=decision_id,
             decided_at=datetime.now(UTC),
+            available_keys=available_keys,
+            approved_keys=approved_keys,
+            denied_keys=denied_keys,
+            unavailable_keys=unavailable_keys,
+            compact_jwe=compact_jwe,
+            result_hash=result_hash,
         )
 
-    async def _wait_for_decision(self, approval: Approval) -> str:
+    def _validate_result(
+        self,
+        approval: Approval,
+        *,
+        decision: str,
+        available_keys: tuple[str, ...],
+        approved_keys: tuple[str, ...],
+        denied_keys: tuple[str, ...],
+        unavailable_keys: tuple[str, ...],
+        compact_jwe: str | None,
+    ) -> None:
+        all_lists = (available_keys, approved_keys, denied_keys, unavailable_keys)
+        if any(len(values) != len(set(values)) for values in all_lists):
+            raise ValueError("consent result contains duplicate property keys")
+        catalog = {item.value for item in PropertyKey}
+        if any(key not in catalog for values in all_lists for key in values):
+            raise ValueError("consent result contains an unknown property key")
+        if decision == "denied":
+            if any(all_lists) or compact_jwe is not None:
+                raise ValueError("denial cannot include property metadata or ciphertext")
+            return
+        if approval.tool_name == LIST_TOOL:
+            if approved_keys or denied_keys or unavailable_keys or compact_jwe is not None:
+                raise ValueError("availability response has an invalid shape")
+            return
+        requested = approval.requested_keys
+        combined = approved_keys + denied_keys + unavailable_keys
+        if len(combined) != len(set(combined)) or set(combined) != set(requested):
+            raise ValueError("request result must partition every requested property")
+        if tuple(key for key in requested if key in set(approved_keys)) != approved_keys:
+            raise ValueError("approved properties must preserve request order")
+        if bool(approved_keys) != bool(compact_jwe):
+            raise ValueError("approved properties require exactly one encrypted disclosure")
+
+    async def _wait_for_decision(self, approval: Approval) -> Approval:
         deadline = time.monotonic() + self.settings.approval_timeout_seconds
         while time.monotonic() < deadline:
             current = await self.store.get_approval(approval.partition_key, approval.approval_id)
             if current is None:
                 raise ApprovalError(ApprovalErrorCode.APPROVAL_UNAVAILABLE)
-            if current.status is ApprovalStatus.APPROVED:
-                return current.display_name_snapshot
-            if current.status is ApprovalStatus.DENIED:
-                raise ApprovalError(ApprovalErrorCode.APPROVAL_DENIED)
+            if current.status in {ApprovalStatus.APPROVED, ApprovalStatus.DENIED}:
+                return current
             if current.status in {ApprovalStatus.CANCELLED, ApprovalStatus.EXPIRED}:
                 raise ApprovalError(ApprovalErrorCode.APPROVAL_TIMED_OUT)
             await asyncio.sleep(self.settings.approval_poll_interval_seconds)
         latest = await self.store.get_approval(approval.partition_key, approval.approval_id)
         if latest is not None:
-            if latest.status is ApprovalStatus.APPROVED:
-                return latest.display_name_snapshot
-            if latest.status is ApprovalStatus.DENIED:
-                raise ApprovalError(ApprovalErrorCode.APPROVAL_DENIED)
+            if latest.status in {ApprovalStatus.APPROVED, ApprovalStatus.DENIED}:
+                return latest
             await self._best_effort_close(latest, ApprovalStatus.EXPIRED)
         raise ApprovalError(ApprovalErrorCode.APPROVAL_TIMED_OUT)
 
@@ -181,8 +286,6 @@ class ApprovalService:
         try:
             await self.store.close_approval(approval, status=status)
         except Exception:
-            # A concurrent phone decision is authoritative. Cleanup is TTL-backed,
-            # so a store outage here must not replace the original caller outcome.
             return
 
 

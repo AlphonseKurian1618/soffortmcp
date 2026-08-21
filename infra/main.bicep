@@ -432,6 +432,11 @@ resource approvalContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/c
           {
             path: '/"display_name_snapshot"/?'
           }
+          {
+            // JWE bytes are fetched only by point read and must never inflate
+            // Cosmos indexing cost or become queryable content.
+            path: '/"compact_jwe"/?'
+          }
         ]
       }
     }
@@ -483,6 +488,22 @@ resource approvalVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
   }
 }
 
+resource disclosureKey 'Microsoft.KeyVault/vaults/keys@2024-11-01' = {
+  parent: approvalVault
+  name: 'permi-disclosure'
+  properties: {
+    kty: 'RSA'
+    keySize: 2048
+    keyOps: [
+      'encrypt'
+      'decrypt'
+    ]
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
 var keyVaultSecretsUserRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '4633458b-17de-408a-b874-0445c86b69e6'
@@ -494,6 +515,20 @@ resource applicationVaultSecretsUser 'Microsoft.Authorization/roleAssignments@20
     principalId: applicationIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: keyVaultSecretsUserRoleId
+  }
+}
+
+var keyVaultCryptoUserRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '12338af0-0e69-4776-bea7-57ae8d297424'
+)
+resource applicationVaultCryptoUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(approvalVault.id, applicationIdentity.id, keyVaultCryptoUserRoleId)
+  scope: approvalVault
+  properties: {
+    principalId: applicationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: keyVaultCryptoUserRoleId
   }
 }
 

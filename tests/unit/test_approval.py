@@ -1,8 +1,8 @@
-"""Tests for the durable phone-approval application service."""
+"""Tests for the durable, result-bound phone consent service."""
 
 import asyncio
 import base64
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid7
 
 import pytest
@@ -11,8 +11,14 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from soffortbackend.approval import ApprovalError, ApprovalErrorCode, ApprovalService
+from soffortbackend.catalog import PropertyKey
 from soffortbackend.device_security import decision_message
-from soffortbackend.models import ApprovalStatus, Device, Principal, StoreConflict
+from soffortbackend.disclosure import (
+    DisclosedProperty,
+    FakeDisclosureDecryptor,
+    result_manifest_hash,
+)
+from soffortbackend.models import Approval, ApprovalStatus, Device, Principal, StoreConflict
 from soffortbackend.notifications import FakeApprovalNotifier
 from soffortbackend.settings import Settings
 from soffortbackend.store import InMemoryApprovalStore
@@ -48,15 +54,16 @@ async def _configured_service(
     ApprovalService,
     InMemoryApprovalStore,
     FakeApprovalNotifier,
+    FakeDisclosureDecryptor,
     Principal,
     ec.EllipticCurvePrivateKey,
     Device,
 ]:
     store = InMemoryApprovalStore()
     notifier = FakeApprovalNotifier(accept=notifier_accepts)
-    service = ApprovalService(settings, store, notifier)
+    disclosure = FakeDisclosureDecryptor()
+    service = ApprovalService(settings, store, notifier, disclosure)
     principal = _principal(settings)
-    await store.put_profile(principal.partition_key, "Alphonse")
     private, public_jwk = _device_key()
     device = Device(
         partition_key=principal.partition_key,
@@ -68,7 +75,7 @@ async def _configured_service(
         updated_at=datetime.now(UTC),
     )
     store.devices[(principal.partition_key, device.device_id)] = device
-    return service, store, notifier, principal, private, device
+    return service, store, notifier, disclosure, principal, private, device
 
 
 async def _wait_for_delivery(notifier: FakeApprovalNotifier) -> None:
@@ -84,8 +91,21 @@ def _signed_decision(
     principal: Principal,
     device: Device,
     approval,
+    *,
     decision: str,
-) -> tuple[int, str]:
+    available_keys: tuple[str, ...] = (),
+    approved_keys: tuple[str, ...] = (),
+    denied_keys: tuple[str, ...] = (),
+    unavailable_keys: tuple[str, ...] = (),
+    compact_jwe: str | None = None,
+) -> tuple[int, str, str]:
+    result_hash = result_manifest_hash(
+        available_keys=available_keys,
+        approved_keys=approved_keys,
+        denied_keys=denied_keys,
+        unavailable_keys=unavailable_keys,
+        compact_jwe=compact_jwe,
+    )
     issued_at = int(datetime.now(UTC).timestamp())
     message = decision_message(
         tenant_id=principal.tenant_id,
@@ -96,102 +116,132 @@ def _signed_decision(
         tool_name=approval.tool_name,
         arguments_hash=approval.arguments_hash,
         decision=decision,
+        result_hash=result_hash,
         issued_at=issued_at,
     )
-    return issued_at, _encode(private.sign(message, ec.ECDSA(hashes.SHA256())))
+    signature = _encode(private.sign(message, ec.ECDSA(hashes.SHA256())))
+    return issued_at, signature, result_hash
 
 
-@pytest.mark.asyncio
-async def test_phone_approval_returns_profile_snapshot_and_is_idempotent(
-    settings: Settings,
-) -> None:
-    service, store, notifier, principal, private, device = await _configured_service(settings)
-    pending = asyncio.create_task(service.request_hello_world(principal))
-    await _wait_for_delivery(notifier)
-    approval = notifier.deliveries[0][0]
-    persisted = await store.get_approval(principal.partition_key, approval.approval_id)
-    assert persisted is not None
-    issued_at, signature = _signed_decision(private, principal, device, persisted, "approved")
-    decision_id = str(uuid7())
-
-    decided = await service.decide(
+async def _decide(service, principal, device, approval, private, *, decision, **result):
+    issued_at, signature, result_hash = _signed_decision(
+        private, principal, device, approval, decision=decision, **result
+    )
+    return await service.decide(
         principal,
         approval_id=approval.approval_id,
         device_id=device.device_id,
-        decision_id=decision_id,
-        decision="approved",
+        decision_id=str(uuid7()),
+        decision=decision,
+        result_hash=result_hash,
         issued_at=issued_at,
         signature=signature,
+        **result,
     )
-    replay = await service.decide(
-        principal,
-        approval_id=approval.approval_id,
-        device_id=device.device_id,
-        decision_id=decision_id,
-        decision="approved",
-        issued_at=issued_at,
-        signature=signature,
-    )
-
-    assert decided.status is ApprovalStatus.APPROVED
-    assert replay == decided
-    assert await pending == "Alphonse"
-    with pytest.raises(StoreConflict):
-        await service.decide(
-            principal,
-            approval_id=approval.approval_id,
-            device_id=device.device_id,
-            decision_id=str(uuid7()),
-            decision="denied",
-            issued_at=issued_at,
-            signature=signature,
-        )
 
 
 @pytest.mark.asyncio
-async def test_denial_returns_closed_mcp_error(settings: Settings) -> None:
-    service, store, notifier, principal, private, device = await _configured_service(settings)
-    pending = asyncio.create_task(service.request_hello_world(principal))
+async def test_discovery_returns_only_available_manifest(settings: Settings) -> None:
+    service, store, notifier, _, principal, private, device = await _configured_service(settings)
+    pending = asyncio.create_task(service.request_available_properties(principal))
     await _wait_for_delivery(notifier)
     approval = await store.get_approval(
         principal.partition_key, notifier.deliveries[0][0].approval_id
     )
     assert approval is not None
-    issued_at, signature = _signed_decision(private, principal, device, approval, "denied")
-    await service.decide(
-        principal,
-        approval_id=approval.approval_id,
-        device_id=device.device_id,
-        decision_id=str(uuid7()),
-        decision="denied",
-        issued_at=issued_at,
-        signature=signature,
+    keys = (
+        PropertyKey.CONTACT_PERSONAL_EMAIL.value,
+        PropertyKey.IDENTITY_LEGAL_NAME.value,
     )
-    with pytest.raises(ApprovalError) as raised:
-        await pending
-    assert raised.value.code is ApprovalErrorCode.APPROVAL_DENIED
+    await _decide(
+        service,
+        principal,
+        device,
+        approval,
+        private,
+        decision="approved",
+        available_keys=keys,
+        approved_keys=(),
+        denied_keys=(),
+        unavailable_keys=(),
+        compact_jwe=None,
+    )
+    assert (await pending).available_keys == keys
 
 
 @pytest.mark.asyncio
-async def test_missing_profile_phone_and_delivery_fail_closed(settings: Settings) -> None:
-    principal = _principal(settings)
-    empty = InMemoryApprovalStore()
-    with pytest.raises(ApprovalError) as missing_profile:
-        await ApprovalService(settings, empty, FakeApprovalNotifier()).request_hello_world(
-            principal
-        )
-    assert missing_profile.value.code is ApprovalErrorCode.PROFILE_REQUIRED
+async def test_denial_is_a_structured_business_outcome(settings: Settings) -> None:
+    service, store, notifier, _, principal, private, device = await _configured_service(settings)
+    pending = asyncio.create_task(service.request_available_properties(principal))
+    await _wait_for_delivery(notifier)
+    approval = await store.get_approval(
+        principal.partition_key, notifier.deliveries[0][0].approval_id
+    )
+    assert approval is not None
+    await _decide(
+        service,
+        principal,
+        device,
+        approval,
+        private,
+        decision="denied",
+        available_keys=(),
+        approved_keys=(),
+        denied_keys=(),
+        unavailable_keys=(),
+        compact_jwe=None,
+    )
+    assert (await pending).status is ApprovalStatus.DENIED
 
-    await empty.put_profile(principal.partition_key, "Alphonse")
+
+@pytest.mark.asyncio
+async def test_request_decrypts_only_approved_properties(settings: Settings) -> None:
+    service, store, notifier, disclosure, principal, private, device = await _configured_service(
+        settings
+    )
+    requested = (PropertyKey.CONTACT_PERSONAL_EMAIL, PropertyKey.IDENTITY_LEGAL_NAME)
+    pending = asyncio.create_task(
+        service.request_properties(principal, requested, "Send my receipt")
+    )
+    await _wait_for_delivery(notifier)
+    approval = await store.get_approval(
+        principal.partition_key, notifier.deliveries[0][0].approval_id
+    )
+    assert approval is not None
+    disclosure.values[approval.approval_id] = (
+        DisclosedProperty(PropertyKey.CONTACT_PERSONAL_EMAIL, "person@example.test"),
+    )
+    await _decide(
+        service,
+        principal,
+        device,
+        approval,
+        private,
+        decision="approved",
+        available_keys=(),
+        approved_keys=(PropertyKey.CONTACT_PERSONAL_EMAIL.value,),
+        denied_keys=(PropertyKey.IDENTITY_LEGAL_NAME.value,),
+        unavailable_keys=(),
+        compact_jwe="fixture",
+    )
+    result, values = await pending
+    assert result.approved_keys == (PropertyKey.CONTACT_PERSONAL_EMAIL.value,)
+    assert values == disclosure.values[approval.approval_id]
+
+
+@pytest.mark.asyncio
+async def test_missing_phone_and_delivery_fail_closed(settings: Settings) -> None:
+    principal = _principal(settings)
+    disclosure = FakeDisclosureDecryptor()
     with pytest.raises(ApprovalError) as missing_phone:
-        await ApprovalService(settings, empty, FakeApprovalNotifier()).request_hello_world(
-            principal
-        )
+        await ApprovalService(
+            settings, InMemoryApprovalStore(), FakeApprovalNotifier(), disclosure
+        ).request_available_properties(principal)
     assert missing_phone.value.code is ApprovalErrorCode.PHONE_NOT_LINKED
 
-    service, _, _, principal, _, _ = await _configured_service(settings, notifier_accepts=False)
+    service, _, _, _, principal, _, _ = await _configured_service(settings, notifier_accepts=False)
     with pytest.raises(ApprovalError) as delivery:
-        await service.request_hello_world(principal)
+        await service.request_available_properties(principal)
     assert delivery.value.code is ApprovalErrorCode.NOTIFICATIONS_UNAVAILABLE
 
 
@@ -200,9 +250,9 @@ async def test_timeout_and_cancellation_close_pending_approvals(settings: Settin
     fast = settings.model_copy(
         update={"approval_timeout_seconds": 0.03, "approval_poll_interval_seconds": 0.005}
     )
-    service, store, notifier, principal, _, _ = await _configured_service(fast)
+    service, store, notifier, _, principal, _, _ = await _configured_service(fast)
     with pytest.raises(ApprovalError) as timed_out:
-        await service.request_hello_world(principal)
+        await service.request_available_properties(principal)
     assert timed_out.value.code is ApprovalErrorCode.APPROVAL_TIMED_OUT
     approval = await store.get_approval(
         principal.partition_key, notifier.deliveries[0][0].approval_id
@@ -212,8 +262,8 @@ async def test_timeout_and_cancellation_close_pending_approvals(settings: Settin
     slower = settings.model_copy(
         update={"approval_timeout_seconds": 1, "approval_poll_interval_seconds": 0.01}
     )
-    service, store, notifier, principal, _, _ = await _configured_service(slower)
-    task = asyncio.create_task(service.request_hello_world(principal))
+    service, store, notifier, _, principal, _, _ = await _configured_service(slower)
+    task = asyncio.create_task(service.request_available_properties(principal))
     await _wait_for_delivery(notifier)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -225,24 +275,109 @@ async def test_timeout_and_cancellation_close_pending_approvals(settings: Settin
 
 
 @pytest.mark.asyncio
-async def test_wrong_device_signature_is_rejected(settings: Settings) -> None:
-    service, store, notifier, principal, _, device = await _configured_service(settings)
-    pending = asyncio.create_task(service.request_hello_world(principal))
+async def test_result_tampering_and_replay_are_rejected(settings: Settings) -> None:
+    service, store, notifier, _, principal, private, device = await _configured_service(settings)
+    pending = asyncio.create_task(service.request_available_properties(principal))
     await _wait_for_delivery(notifier)
     approval = await store.get_approval(
         principal.partition_key, notifier.deliveries[0][0].approval_id
     )
     assert approval is not None
-    with pytest.raises(ValueError, match="invalid"):
+    with pytest.raises(ValueError, match="result_hash"):
         await service.decide(
             principal,
             approval_id=approval.approval_id,
             device_id=device.device_id,
             decision_id=str(uuid7()),
             decision="approved",
+            available_keys=(),
+            approved_keys=(),
+            denied_keys=(),
+            unavailable_keys=(),
+            compact_jwe=None,
+            result_hash="tampered",
             issued_at=int(datetime.now(UTC).timestamp()),
-            signature=_encode(b"invalid"),
+            signature="invalid",
         )
-    pending.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await pending
+    decided = await _decide(
+        service,
+        principal,
+        device,
+        approval,
+        private,
+        decision="denied",
+        available_keys=(),
+        approved_keys=(),
+        denied_keys=(),
+        unavailable_keys=(),
+        compact_jwe=None,
+    )
+    assert (await pending).status is ApprovalStatus.DENIED
+    with pytest.raises(StoreConflict):
+        await _decide(
+            service,
+            principal,
+            device,
+            decided,
+            private,
+            decision="approved",
+            available_keys=(),
+            approved_keys=(),
+            denied_keys=(),
+            unavailable_keys=(),
+            compact_jwe=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("changes", "match"),
+    [
+        ({"available_keys": ("contact.personalEmail",) * 2}, "duplicate"),
+        ({"available_keys": ("unknown",)}, "unknown"),
+        ({"decision": "denied", "available_keys": ("contact.personalEmail",)}, "denial"),
+        (
+            {"tool_name": "list_available_properties", "approved_keys": ("contact.personalEmail",)},
+            "availability",
+        ),
+        ({"approved_keys": (), "denied_keys": ()}, "partition"),
+        (
+            {
+                "requested_keys": ("contact.personalEmail", "identity.legalName"),
+                "approved_keys": ("identity.legalName", "contact.personalEmail"),
+            },
+            "preserve request order",
+        ),
+        ({"approved_keys": ("contact.personalEmail",), "compact_jwe": None}, "encrypted"),
+    ],
+)
+def test_consent_result_shape_fails_closed(settings: Settings, changes, match) -> None:
+    now = datetime.now(UTC)
+    values = {
+        "tool_name": "request_properties",
+        "decision": "approved",
+        "requested_keys": ("contact.personalEmail",),
+        "available_keys": (),
+        "approved_keys": ("contact.personalEmail",),
+        "denied_keys": (),
+        "unavailable_keys": (),
+        "compact_jwe": "fixture",
+    }
+    values.update(changes)
+    approval = Approval(
+        partition_key="tenant:subject",
+        approval_id=str(uuid7()),
+        event_id=str(uuid7()),
+        nonce="nonce",
+        tool_name=values.pop("tool_name"),
+        arguments_hash="hash",
+        requester="VS Code",
+        purpose="Test",
+        requested_keys=values.pop("requested_keys"),
+        created_at=now,
+        expires_at=now + timedelta(minutes=2),
+    )
+    service = ApprovalService(
+        settings, InMemoryApprovalStore(), FakeApprovalNotifier(), FakeDisclosureDecryptor()
+    )
+    with pytest.raises(ValueError, match=match):
+        service._validate_result(approval, **values)

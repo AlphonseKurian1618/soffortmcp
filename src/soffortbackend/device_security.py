@@ -30,6 +30,18 @@ def normalize_display_name(value: object) -> str:
     return normalized
 
 
+def normalize_purpose(value: object) -> str:
+    """Normalize bounded request context before it is shown on the phone."""
+    if not isinstance(value, str):
+        raise ValueError("purpose must be a string")
+    normalized = unicodedata.normalize("NFC", value.strip())
+    if not 1 <= len(normalized) <= 200:
+        raise ValueError("purpose must contain 1 to 200 characters")
+    if any(unicodedata.category(character).startswith("C") for character in normalized):
+        raise ValueError("purpose cannot contain control characters")
+    return normalized
+
+
 def canonical_uuid7(value: object, field: str) -> str:
     """Require a lowercase canonical UUIDv7 identifier."""
     if not isinstance(value, str):
@@ -111,13 +123,14 @@ def decision_message(
     tool_name: str,
     arguments_hash: str,
     decision: str,
+    result_hash: str,
     issued_at: int,
 ) -> bytes:
-    """Build the exact one-time approval bytes signed after local authentication."""
+    """Build the exact v2 consent bytes signed after local authentication."""
     return (
-        "soffort-approval-decision-v1\n"
+        "soffort-consent-decision-v2\n"
         f"{tenant_id}\n{object_id}\n{device_id}\n{approval_id}\n{nonce}\n"
-        f"{tool_name}\n{arguments_hash}\n{decision}\n{issued_at}"
+        f"{tool_name}\n{arguments_hash}\n{decision}\n{result_hash}\n{issued_at}"
     ).encode()
 
 

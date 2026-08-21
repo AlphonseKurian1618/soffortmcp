@@ -35,13 +35,14 @@
     "approval": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cosmosEndpoint", "database", "container", "workloadClientId", "keyVaultUrl", "apnsSecretName", "apnsSecretVersion", "apnsKeyId", "apnsTeamId", "apnsTopic", "apnsEnvironment"],
+      "required": ["cosmosEndpoint", "database", "container", "workloadClientId", "keyVaultUrl", "disclosureKeyName", "apnsSecretName", "apnsSecretVersion", "apnsKeyId", "apnsTeamId", "apnsTopic", "apnsEnvironment"],
       "properties": {
         "cosmosEndpoint": { "type": "string", "pattern": "^https://" },
         "database": { "type": "string", "const": "soffortbackend" },
         "container": { "type": "string", "const": "approval" },
         "workloadClientId": { "type": "string", "minLength": 1 },
         "keyVaultUrl": { "type": "string", "pattern": "^https://" },
+        "disclosureKeyName": { "type": "string", "const": "permi-disclosure" },
         "apnsSecretName": { "type": "string", "const": "apns-private-key" },
         "apnsSecretVersion": { "type": "string", "minLength": 1 },
         "apnsKeyId": { "type": "string", "pattern": "^[A-Z0-9]{10}$" },

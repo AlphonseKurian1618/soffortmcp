@@ -91,7 +91,7 @@ class Device:
 
 @dataclass(frozen=True, slots=True)
 class Approval:
-    """One time-bounded decision bound to an exact MCP invocation."""
+    """One time-bounded consent request bound to an exact MCP invocation."""
 
     partition_key: str
     approval_id: str
@@ -100,14 +100,20 @@ class Approval:
     tool_name: str
     arguments_hash: str
     requester: str
-    display_name_snapshot: str
-    profile_version: int
+    purpose: str
+    requested_keys: tuple[str, ...]
     created_at: datetime
     expires_at: datetime
     status: ApprovalStatus = ApprovalStatus.PENDING
     decided_at: datetime | None = None
     decided_by_device_id: str | None = None
     decision_id: str | None = None
+    available_keys: tuple[str, ...] = ()
+    approved_keys: tuple[str, ...] = ()
+    denied_keys: tuple[str, ...] = ()
+    unavailable_keys: tuple[str, ...] = ()
+    compact_jwe: str | None = None
+    result_hash: str | None = None
     etag: str | None = None
 
     @property

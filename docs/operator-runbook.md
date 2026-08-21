@@ -50,6 +50,8 @@ Merging application code runs CI and publishes a multi-architecture image only a
 
 Rollback by reverting the digest commit. Flux applies the previous digest and Helm remediation rolls back a failed upgrade automatically. GitHub-hosted runners never run `kubectl` or `helm upgrade` against the private cluster.
 
+The Permi disclosure key is `permi-disclosure`, RSA 2048, and non-exportable. Rotate it by creating a new enabled Key Vault key version, deploy/restart the app so newly created requests advertise the new `kid`, complete the physical-iPhone E2E, then wait longer than the two-minute request deadline plus five-minute Cosmos TTL before disabling an old version. Do not delete old versions during development incident recovery; in-flight JWE is version-addressed.
+
 ## Smoke tests
 
 After DNS, TLS, and Flux report healthy:
@@ -66,6 +68,16 @@ The metadata request must return 200 and canonical resource `https://soffort.com
 Complete the real VS Code, physical iPhone, Apple, and Email OTP gates before unsuspending the first application
 release. Run `scripts/load-test.py` only with a short-lived development token in a local shell;
 shell history and logs must not retain it.
+
+Only after successful vault E2E, run the legacy profile cleanup count and copy only its count:
+
+```bash
+uv run python scripts/cleanup-profiles.py --endpoint <cosmos-endpoint>
+uv run python scripts/cleanup-profiles.py --endpoint <cosmos-endpoint> \
+  --apply --expected-count <dry-run-count>
+```
+
+The second command refuses changed counts and point-deletes only `id=profile`, `kind=profile` results. Never run it before the dry-run review; device and consent records are out of scope.
 
 ## Incidents and cost
 

@@ -182,8 +182,8 @@ class APNsApprovalNotifier:
         payload = {
             "aps": {
                 "alert": {
-                    "title": "Soffort approval requested",
-                    "body": "Open AI Vault to review the request.",
+                    "title": "Permi request",
+                    "body": "Open Permi to review which information was requested.",
                 },
                 "sound": "default",
             },

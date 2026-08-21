@@ -78,6 +78,8 @@ spec:
               value: {{ .Values.approval.workloadClientId | quote }}
             - name: SOFFORT_KEY_VAULT_URL
               value: {{ .Values.approval.keyVaultUrl | quote }}
+            - name: SOFFORT_DISCLOSURE_KEY_NAME
+              value: {{ .Values.approval.disclosureKeyName | quote }}
             - name: SOFFORT_APNS_PRIVATE_KEY_SECRET_NAME
               value: {{ .Values.approval.apnsSecretName | quote }}
             - name: SOFFORT_APNS_PRIVATE_KEY_SECRET_VERSION

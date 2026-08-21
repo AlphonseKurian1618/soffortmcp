@@ -85,6 +85,11 @@ spec:
             group: traefik.io
             kind: Middleware
             name: soffortbackend-rate-limit
+      # The phone has two minutes to decide. Keep a small network margin while
+      # remaining bounded so abandoned requests do not consume ingress forever.
+      timeouts:
+        request: 150s
+        backendRequest: 145s
       backendRefs:
         - name: {{ include "soffortbackend.fullname" . }}
           port: {{ .Values.service.port }}

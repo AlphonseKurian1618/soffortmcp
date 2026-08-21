@@ -91,6 +91,10 @@ class ApprovalStore(Protocol):
         """Read an approval by point key."""
         ...
 
+    async def list_pending_approvals(self, partition_key: str) -> Sequence[Approval]:
+        """List the bounded, unexpired inbox for one phone account."""
+        ...
+
     async def decide_approval(
         self,
         approval: Approval,
@@ -99,6 +103,12 @@ class ApprovalStore(Protocol):
         device_id: str,
         decision_id: str,
         decided_at: datetime,
+        available_keys: tuple[str, ...],
+        approved_keys: tuple[str, ...],
+        denied_keys: tuple[str, ...],
+        unavailable_keys: tuple[str, ...],
+        compact_jwe: str | None,
+        result_hash: str,
     ) -> Approval:
         """Conditionally commit the first signed phone decision."""
         ...
@@ -211,6 +221,17 @@ class InMemoryApprovalStore:
         """Read a fixture approval."""
         return self.approvals.get((partition_key, approval_id))
 
+    async def list_pending_approvals(self, partition_key: str) -> Sequence[Approval]:
+        """List at most 20 pending fixture approvals newest first."""
+        values = [
+            approval
+            for (key, _), approval in self.approvals.items()
+            if key == partition_key
+            and approval.status is ApprovalStatus.PENDING
+            and not approval.expired
+        ]
+        return sorted(values, key=lambda item: item.created_at, reverse=True)[:20]
+
     async def decide_approval(
         self,
         approval: Approval,
@@ -219,6 +240,12 @@ class InMemoryApprovalStore:
         device_id: str,
         decision_id: str,
         decided_at: datetime,
+        available_keys: tuple[str, ...],
+        approved_keys: tuple[str, ...],
+        denied_keys: tuple[str, ...],
+        unavailable_keys: tuple[str, ...],
+        compact_jwe: str | None,
+        result_hash: str,
     ) -> Approval:
         """Commit the first fixture decision under a lock."""
         async with self._lock:
@@ -238,6 +265,12 @@ class InMemoryApprovalStore:
                 decided_at=decided_at,
                 decided_by_device_id=device_id,
                 decision_id=decision_id,
+                available_keys=available_keys,
+                approved_keys=approved_keys,
+                denied_keys=denied_keys,
+                unavailable_keys=unavailable_keys,
+                compact_jwe=compact_jwe,
+                result_hash=result_hash,
                 etag=str(version),
             )
             self._versions[key] = version
@@ -414,6 +447,21 @@ class CosmosApprovalStore:
         document = await self._read(f"approval:{approval_id}", partition_key)
         return _approval_from_document(document) if document is not None else None
 
+    async def list_pending_approvals(self, partition_key: str) -> Sequence[Approval]:
+        """Query the bounded subject inbox without exposing another partition."""
+        # Sort after the partition-local query so the development container does
+        # not require a paid-for/custom composite index merely for the inbox.
+        query = "SELECT * FROM c WHERE c.kind = 'approval' AND c.status = 'pending'"
+        try:
+            iterator = self._require_container().query_items(
+                query=query, partition_key=partition_key
+            )
+            values = [_approval_from_document(item) async for item in iterator]
+            active = [item for item in values if not item.expired]
+            return sorted(active, key=lambda item: item.created_at, reverse=True)[:20]
+        except CosmosHttpResponseError as error:
+            raise StoreUnavailable("Cosmos approval inbox query failed") from error
+
     async def decide_approval(
         self,
         approval: Approval,
@@ -422,6 +470,12 @@ class CosmosApprovalStore:
         device_id: str,
         decision_id: str,
         decided_at: datetime,
+        available_keys: tuple[str, ...],
+        approved_keys: tuple[str, ...],
+        denied_keys: tuple[str, ...],
+        unavailable_keys: tuple[str, ...],
+        compact_jwe: str | None,
+        result_hash: str,
     ) -> Approval:
         """Conditionally replace a pending approval with a phone decision."""
         if (
@@ -436,6 +490,12 @@ class CosmosApprovalStore:
             decided_at=decided_at,
             decided_by_device_id=device_id,
             decision_id=decision_id,
+            available_keys=available_keys,
+            approved_keys=approved_keys,
+            denied_keys=denied_keys,
+            unavailable_keys=unavailable_keys,
+            compact_jwe=compact_jwe,
+            result_hash=result_hash,
             etag=None,
         )
         return await self._replace_approval(approval, updated)
@@ -555,14 +615,20 @@ def _approval_document(approval: Approval) -> dict[str, Any]:
         "tool_name": approval.tool_name,
         "arguments_hash": approval.arguments_hash,
         "requester": approval.requester,
-        "display_name_snapshot": approval.display_name_snapshot,
-        "profile_version": approval.profile_version,
+        "purpose": approval.purpose,
+        "requested_keys": list(approval.requested_keys),
         "created_at": _iso(approval.created_at),
         "expires_at": _iso(approval.expires_at),
         "status": approval.status.value,
         "decided_at": _iso(approval.decided_at) if approval.decided_at else None,
         "decided_by_device_id": approval.decided_by_device_id,
         "decision_id": approval.decision_id,
+        "available_keys": list(approval.available_keys),
+        "approved_keys": list(approval.approved_keys),
+        "denied_keys": list(approval.denied_keys),
+        "unavailable_keys": list(approval.unavailable_keys),
+        "compact_jwe": approval.compact_jwe,
+        "result_hash": approval.result_hash,
         # Logical expiry is enforced in code; TTL only removes stale metadata.
         "ttl": 300,
     }
@@ -577,8 +643,8 @@ def _approval_from_document(document: dict[str, Any]) -> Approval:
         tool_name=str(document["tool_name"]),
         arguments_hash=str(document["arguments_hash"]),
         requester=str(document["requester"]),
-        display_name_snapshot=str(document["display_name_snapshot"]),
-        profile_version=int(document["profile_version"]),
+        purpose=str(document["purpose"]),
+        requested_keys=tuple(str(value) for value in document["requested_keys"]),
         created_at=_datetime(document["created_at"]),
         expires_at=_datetime(document["expires_at"]),
         status=ApprovalStatus(str(document["status"])),
@@ -587,5 +653,11 @@ def _approval_from_document(document: dict[str, Any]) -> Approval:
             str(document["decided_by_device_id"]) if document.get("decided_by_device_id") else None
         ),
         decision_id=str(document["decision_id"]) if document.get("decision_id") else None,
+        available_keys=tuple(str(value) for value in document.get("available_keys", [])),
+        approved_keys=tuple(str(value) for value in document.get("approved_keys", [])),
+        denied_keys=tuple(str(value) for value in document.get("denied_keys", [])),
+        unavailable_keys=tuple(str(value) for value in document.get("unavailable_keys", [])),
+        compact_jwe=str(document["compact_jwe"]) if document.get("compact_jwe") else None,
+        result_hash=str(document["result_hash"]) if document.get("result_hash") else None,
         etag=str(document.get("_etag")) if document.get("_etag") else None,
     )

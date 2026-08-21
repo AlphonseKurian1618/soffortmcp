@@ -14,18 +14,18 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from soffortbackend.approval import ApprovalService
+from soffortbackend.approval import REQUEST_TOOL, ApprovalService
+from soffortbackend.catalog import PROPERTY_BY_KEY, PropertyKey
 from soffortbackend.device_security import (
     canonical_uuid7,
     enrollment_message,
     jwk_thumbprint,
-    normalize_display_name,
     parse_public_jwk,
     require_fresh_issued_at,
     validate_apns_token,
     verify_signature,
 )
-from soffortbackend.models import Device, EnrollmentChallenge, Principal, StoreConflict
+from soffortbackend.models import Approval, Device, EnrollmentChallenge, Principal, StoreConflict
 from soffortbackend.settings import Settings
 from soffortbackend.store import ApprovalStore
 
@@ -67,41 +67,8 @@ def register_mobile_routes(
             }
         )
 
-    async def get_profile(request: Request) -> Response:
-        async def operation(principal: Principal) -> Response:
-            profile = await store.get_profile(principal.partition_key)
-            if profile is None:
-                raise MobileHttpError(404, "profile_required")
-            return JSONResponse(
-                {
-                    "display_name": profile.display_name,
-                    "version": profile.version,
-                    "updated_at": _iso(profile.updated_at),
-                }
-            )
-
-        return await _execute(request, settings, operation)
-
-    async def put_profile(request: Request) -> Response:
-        async def operation(principal: Principal) -> Response:
-            body = await _read_object(request)
-            _require_exact_members(body, {"display_name"})
-            display_name = normalize_display_name(body["display_name"])
-            profile = await store.put_profile(principal.partition_key, display_name)
-            return JSONResponse(
-                {
-                    "display_name": profile.display_name,
-                    "version": profile.version,
-                    "updated_at": _iso(profile.updated_at),
-                }
-            )
-
-        return await _execute(request, settings, operation)
-
     async def create_challenge(request: Request) -> Response:
         async def operation(principal: Principal) -> Response:
-            if await store.get_profile(principal.partition_key) is None:
-                raise MobileHttpError(409, "profile_required")
             challenge = EnrollmentChallenge(
                 partition_key=principal.partition_key,
                 challenge_id=str(uuid7()),
@@ -192,17 +159,15 @@ def register_mobile_routes(
             approval = await store.get_approval(principal.partition_key, approval_id)
             if approval is None:
                 raise MobileHttpError(404, "approval_not_found")
+            return JSONResponse(await _approval_response(approval, approvals))
+
+        return await _execute(request, settings, operation)
+
+    async def list_approvals(request: Request) -> Response:
+        async def operation(principal: Principal) -> Response:
+            pending = await store.list_pending_approvals(principal.partition_key)
             return JSONResponse(
-                {
-                    "approval_id": approval.approval_id,
-                    "tool_name": approval.tool_name,
-                    "requester": approval.requester,
-                    "arguments_hash": approval.arguments_hash,
-                    "nonce": approval.nonce,
-                    "status": approval.status.value,
-                    "created_at": _iso(approval.created_at),
-                    "expires_at": _iso(approval.expires_at),
-                }
+                {"requests": [await _approval_response(item, approvals) for item in pending]}
             )
 
         return await _execute(request, settings, operation)
@@ -212,13 +177,44 @@ def register_mobile_routes(
             approval_id = canonical_uuid7(request.path_params["approval_id"], "approval_id")
             body = await _read_object(request)
             _require_exact_members(
-                body, {"device_id", "decision_id", "decision", "issued_at", "signature"}
+                body,
+                {
+                    "device_id",
+                    "decision_id",
+                    "decision",
+                    "result",
+                    "result_hash",
+                    "issued_at",
+                    "signature",
+                },
             )
             device_id = canonical_uuid7(body["device_id"], "device_id")
             decision_id = canonical_uuid7(body["decision_id"], "decision_id")
             decision = body["decision"]
             if decision not in {"approved", "denied"}:
                 raise MobileHttpError(400, "invalid_decision")
+            result = body["result"]
+            if not isinstance(result, dict):
+                raise ValueError("result must be an object")
+            result_object = cast(dict[str, object], result)
+            _require_exact_members(
+                result_object,
+                {
+                    "available_keys",
+                    "approved_keys",
+                    "denied_keys",
+                    "unavailable_keys",
+                    "compact_jwe",
+                },
+            )
+            compact_jwe = result_object["compact_jwe"]
+            if compact_jwe is not None and (
+                not isinstance(compact_jwe, str) or not 1 <= len(compact_jwe) <= 96_000
+            ):
+                raise ValueError("compact_jwe has an invalid size")
+            result_hash = body["result_hash"]
+            if not isinstance(result_hash, str) or not 40 <= len(result_hash) <= 64:
+                raise ValueError("result_hash is malformed")
             issued_at = require_fresh_issued_at(body["issued_at"])
             approval = await approvals.decide(
                 principal,
@@ -226,6 +222,12 @@ def register_mobile_routes(
                 device_id=device_id,
                 decision_id=decision_id,
                 decision=decision,
+                available_keys=_string_tuple(result_object["available_keys"]),
+                approved_keys=_string_tuple(result_object["approved_keys"]),
+                denied_keys=_string_tuple(result_object["denied_keys"]),
+                unavailable_keys=_string_tuple(result_object["unavailable_keys"]),
+                compact_jwe=compact_jwe,
+                result_hash=result_hash,
                 issued_at=issued_at,
                 signature=body["signature"],
             )
@@ -242,11 +244,10 @@ def register_mobile_routes(
     server.custom_route("/.well-known/oauth-protected-resource/v1", methods=["GET"])(
         resource_metadata
     )
-    server.custom_route("/v1/me/profile", methods=["GET"])(get_profile)
-    server.custom_route("/v1/me/profile", methods=["PUT"])(put_profile)
     server.custom_route("/v1/devices/enrollment-challenges", methods=["POST"])(create_challenge)
     server.custom_route("/v1/devices/{device_id}", methods=["PUT"])(put_device)
     server.custom_route("/v1/devices/{device_id}", methods=["DELETE"])(delete_device)
+    server.custom_route("/v1/approvals", methods=["GET"])(list_approvals)
     server.custom_route("/v1/approvals/{approval_id}", methods=["GET"])(get_approval)
     server.custom_route("/v1/approvals/{approval_id}/decisions", methods=["POST"])(decide_approval)
 
@@ -311,6 +312,52 @@ async def _read_object(request: Request) -> dict[str, Any]:
 def _require_exact_members(body: dict[str, Any], members: set[str]) -> None:
     if set(body) != members:
         raise ValueError("request body members do not match the contract")
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError("property manifest must be a bounded array")
+    values = cast(list[object], value)
+    if len(values) > len(list(PropertyKey)):
+        raise ValueError("property manifest must be a bounded array")
+    if not all(isinstance(item, str) for item in values):
+        raise ValueError("property manifest members must be strings")
+    return tuple(cast(list[str], values))
+
+
+async def _approval_response(
+    approval: Approval,
+    approvals: ApprovalService,
+) -> dict[str, Any]:
+    requested = []
+    for raw_key in approval.requested_keys:
+        key = PropertyKey(raw_key)
+        definition = PROPERTY_BY_KEY[key]
+        requested.append(
+            {
+                "key": key.value,
+                "display_name": definition.display_name,
+                "value_type": definition.value_type,
+                "sensitivity": definition.sensitivity,
+            }
+        )
+    disclosure_key = None
+    if approval.tool_name == REQUEST_TOOL:
+        disclosure_key = (await approvals.disclosure.current_key()).as_json()
+    return {
+        "contract_version": 2,
+        "approval_id": approval.approval_id,
+        "tool_name": approval.tool_name,
+        "requester": approval.requester,
+        "purpose": approval.purpose,
+        "requested_properties": requested,
+        "arguments_hash": approval.arguments_hash,
+        "nonce": approval.nonce,
+        "status": approval.status.value,
+        "created_at": _iso(approval.created_at),
+        "expires_at": _iso(approval.expires_at),
+        "disclosure_key": disclosure_key,
+    }
 
 
 def _problem(status: int, code: str, *, headers: dict[str, str] | None = None) -> JSONResponse:

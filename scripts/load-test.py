@@ -12,7 +12,7 @@ import httpx
 
 
 async def main_async() -> int:
-    """Call the stateless MCP tool concurrently and enforce latency/error targets."""
+    """List tools concurrently without creating hundreds of phone prompts."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--token", required=True, help="Short-lived Entra access token; never logged"
@@ -28,14 +28,13 @@ async def main_async() -> int:
         "Authorization": f"Bearer {args.token}",
         "Accept": "application/json",
         "MCP-Protocol-Version": "2026-07-28",
-        "MCP-Method": "tools/call",
-        "MCP-Name": "hello_world",
+        "MCP-Method": "tools/list",
     }
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "tools/call",
-        "params": {"name": "hello_world", "arguments": {"name": "Load"}},
+        "method": "tools/list",
+        "params": {},
         "_meta": {
             "protocolVersion": "2026-07-28",
             "clientInfo": {"name": "soffort-load-test", "version": "0.1.0"},

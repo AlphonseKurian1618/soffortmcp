@@ -66,6 +66,7 @@ jobs:
           az bicep install
           az bicep build --file infra/bootstrap.bicep --outfile /tmp/bootstrap.json
           az bicep build --file infra/main.bicep --outfile /tmp/main.json
+          az bicep build --file infra/phase2-bootstrap.bicep --outfile /tmp/phase2.json
       - name: Enforce Azure cost guardrails
         run: uv run python scripts/check-cost-guardrails.py /tmp/main.json
       - name: Install Helm

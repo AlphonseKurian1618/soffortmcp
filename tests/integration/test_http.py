@@ -64,6 +64,12 @@ class AutoApproveNotifier:
             device_id=devices[0].device_id,
             decision_id=str(uuid7()),
             decided_at=datetime.now(UTC),
+            available_keys=("contact.personalEmail",),
+            approved_keys=(),
+            denied_keys=(),
+            unavailable_keys=(),
+            compact_jwe=None,
+            result_hash="fixture-result-hash",
         )
         return DeliveryResult((devices[0].device_id,), ())
 
@@ -183,7 +189,6 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
     """Exercise the 2026 single-exchange profile through the real HTTP boundary."""
     store = InMemoryApprovalStore()
     partition_key = f"{TENANT_ID}:{OBJECT_ID}"
-    await store.put_profile(partition_key, "Alphonse")
     device = Device(
         partition_key=partition_key,
         device_id=str(uuid7()),
@@ -228,13 +233,16 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
             )
             called = await client.post(
                 "/mcp",
-                headers={"Mcp-Method": "tools/call", "Mcp-Name": "hello_world"},
+                headers={
+                    "Mcp-Method": "tools/call",
+                    "Mcp-Name": "list_available_properties",
+                },
                 json={
                     "jsonrpc": "2.0",
                     "id": 2,
                     "method": "tools/call",
                     "params": {
-                        "name": "hello_world",
+                        "name": "list_available_properties",
                         "arguments": {},
                         "_meta": modern_meta,
                     },
@@ -242,15 +250,29 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
             )
 
     assert listed.status_code == 200, listed.text
-    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == ["hello_world"]
+    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == [
+        "list_available_properties",
+        "request_properties",
+    ]
     assert called.status_code == 200
     result = called.json()["result"]
     assert result["structuredContent"] == {
-        "message": "Hello, Alphonse!",
-        "user_name": "Alphonse",
-        "server": "soffortbackend",
+        "status": "approved",
+        "properties": [
+            {
+                "key": "contact.personalEmail",
+                "display_name": "Personal email",
+                "value_type": "email",
+                "sensitivity": "moderate",
+            }
+        ],
     }
-    assert result["content"] == [{"type": "text", "text": "Hello, Alphonse!"}]
+    assert result["content"] == [
+        {
+            "type": "text",
+            "text": "The user approved discovery of 1 available properties.",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -278,13 +300,16 @@ async def test_expected_approval_failure_is_a_meaningful_mcp_tool_error(
         ) as client:
             called = await client.post(
                 "/mcp",
-                headers={"Mcp-Method": "tools/call", "Mcp-Name": "hello_world"},
+                headers={
+                    "Mcp-Method": "tools/call",
+                    "Mcp-Name": "list_available_properties",
+                },
                 json={
                     "jsonrpc": "2.0",
                     "id": 2,
                     "method": "tools/call",
                     "params": {
-                        "name": "hello_world",
+                        "name": "list_available_properties",
                         "arguments": {},
                         "_meta": modern_meta,
                     },
@@ -298,8 +323,8 @@ async def test_expected_approval_failure_is_a_meaningful_mcp_tool_error(
         {
             "type": "text",
             "text": (
-                "Error executing tool hello_world: Set your display name in the "
-                "Soffort iPhone app, then try again."
+                "Error executing tool list_available_properties: No iPhone is linked. "
+                "Open Permi and link this iPhone, then try again."
             ),
         }
     ]
@@ -346,7 +371,10 @@ async def test_handshake_protocol_initializes_and_lists_tool(
     assert initialized.status_code == 200, initialized.text
     assert initialized.json()["result"]["protocolVersion"] == "2025-11-25"
     assert listed.status_code == 200, listed.text
-    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == ["hello_world"]
+    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == [
+        "list_available_properties",
+        "request_properties",
+    ]
 
 
 @pytest.mark.asyncio

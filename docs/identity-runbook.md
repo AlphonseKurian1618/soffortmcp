@@ -36,7 +36,7 @@ Use the exact `issuer` and `jwks_uri` returned by the tenant's OpenID Connect me
 4. Confirm the browser offers Apple and verified-email OTP and completes PKCE using the loopback
    redirect for both methods.
 5. On a physical iPhone, confirm MSAL uses the same hosted flow and obtains only `soffortbackend.mobile`. A different provider/account must remain a separate identity.
-6. Confirm `tools/list` shows only `hello_world`; complete the phone decision and confirm the call returns the documented result.
+6. Confirm `tools/list` shows only `list_available_properties` and `request_properties`; complete phone decisions and confirm the results follow `docs/e2e-test-runbook.md`.
 7. Repeat through `vscode.dev`, including hidden-email, cancellation, returning login, and reconnect cases.
 
 If Entra rejects the MCP resource parameter or VS Code cannot request the configured scope, stop the release. Record sanitized HTTP status, parameter names, and Entra correlation IDs; do not implement an OAuth proxy in the server.

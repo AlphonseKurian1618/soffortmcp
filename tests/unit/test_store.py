@@ -72,15 +72,20 @@ class FakeContainer:
         return self._store(body)
 
     def query_items(self, *, query: str, partition_key: str):
-        assert "notifications_enabled" in query
 
         async def iterate():
             for (key, _), document in self.documents.items():
-                if (
-                    key == partition_key
-                    and document.get("kind") == "device"
+                is_active_device = (
+                    document.get("kind") == "device"
                     and document.get("notifications_enabled") is True
-                ):
+                    and "notifications_enabled" in query
+                )
+                is_pending_approval = (
+                    document.get("kind") == "approval"
+                    and document.get("status") == "pending"
+                    and "status = 'pending'" in query
+                )
+                if key == partition_key and (is_active_device or is_pending_approval):
                     yield dict(document)
 
         return iterate()
@@ -133,11 +138,11 @@ def _approval(partition_key: str) -> Approval:
         approval_id=str(uuid7()),
         event_id=str(uuid7()),
         nonce="nonce",
-        tool_name="hello_world",
+        tool_name="list_available_properties",
         arguments_hash="hash",
         requester="VS Code",
-        display_name_snapshot="Alphonse",
-        profile_version=1,
+        purpose="List available properties",
+        requested_keys=(),
         created_at=now,
         expires_at=now + timedelta(seconds=60),
     )
@@ -199,12 +204,21 @@ async def test_cosmos_store_normal_lifecycle(
         device_id=device.device_id,
         decision_id=str(uuid7()),
         decided_at=datetime.now(UTC),
+        available_keys=("contact.personalEmail",),
+        approved_keys=(),
+        denied_keys=(),
+        unavailable_keys=(),
+        compact_jwe=None,
+        result_hash="fixture-result-hash",
     )
     assert decided.status is ApprovalStatus.APPROVED
     assert await store.close_approval(decided, status=ApprovalStatus.EXPIRED) == decided
 
     pending = _approval(partition)
     await store.create_approval(pending)
+    assert [item.approval_id for item in await store.list_pending_approvals(partition)] == [
+        pending.approval_id
+    ]
     persisted_pending = await store.get_approval(partition, pending.approval_id)
     assert persisted_pending is not None
     closed = await store.close_approval(persisted_pending, status=ApprovalStatus.CANCELLED)
@@ -254,4 +268,56 @@ async def test_in_memory_store_rejects_replayed_challenge_and_stale_approval() -
             device_id=device.device_id,
             decision_id=str(uuid7()),
             decided_at=datetime.now(UTC),
+            available_keys=(),
+            approved_keys=(),
+            denied_keys=(),
+            unavailable_keys=(),
+            compact_jwe=None,
+            result_hash="fixture-result-hash",
         )
+
+
+@pytest.mark.asyncio
+async def test_in_memory_store_conflicts_and_idempotent_closure() -> None:
+    store = InMemoryApprovalStore()
+    partition = "tenant:subject"
+    assert await store.get_profile(partition) is None
+    first = await store.put_profile(partition, "Legacy")
+    second = await store.put_profile(partition, "Legacy Two")
+    assert (first.version, second.version) == (1, 2)
+
+    challenge = EnrollmentChallenge(
+        partition_key=partition,
+        challenge_id=str(uuid7()),
+        nonce="nonce",
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+    await store.create_challenge(challenge)
+    with pytest.raises(StoreConflict, match="already exists"):
+        await store.create_challenge(challenge)
+
+    device = Device(
+        partition_key=partition,
+        device_id=str(uuid7()),
+        public_jwk={},
+        apns_token="ab" * 32,
+        apns_environment="sandbox",
+        notifications_enabled=True,
+        updated_at=datetime.now(UTC),
+    )
+    store.devices[(partition, device.device_id)] = device
+    await store.disable_device(partition, "missing-device")
+    await store.disable_device(partition, device.device_id)
+    disabled = await store.get_device(partition, device.device_id)
+    assert disabled is not None and not disabled.notifications_enabled
+
+    approval = _approval(partition)
+    await store.create_approval(approval)
+    with pytest.raises(StoreConflict, match="already exists"):
+        await store.create_approval(approval)
+    current = await store.get_approval(partition, approval.approval_id)
+    assert current is not None
+    closed = await store.close_approval(current, status=ApprovalStatus.CANCELLED)
+    assert await store.close_approval(closed, status=ApprovalStatus.EXPIRED) == closed
+    with pytest.raises(StoreConflict, match="does not exist"):
+        await store.close_approval(_approval(partition), status=ApprovalStatus.CANCELLED)

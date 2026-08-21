@@ -23,6 +23,7 @@ approval:
   container: approval
   workloadClientId: 00000000-0000-0000-0000-000000000000
   keyVaultUrl: https://example.vault.azure.net/
+  disclosureKeyName: permi-disclosure
   apnsSecretName: apns-private-key
   apnsSecretVersion: replace-with-immutable-version
   apnsKeyId: ABCDEFGHIJ

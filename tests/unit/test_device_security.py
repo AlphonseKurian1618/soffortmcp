@@ -14,6 +14,7 @@ from soffortbackend.device_security import (
     enrollment_message,
     jwk_thumbprint,
     normalize_display_name,
+    normalize_purpose,
     parse_public_jwk,
     require_fresh_issued_at,
     validate_apns_token,
@@ -41,6 +42,13 @@ def test_profile_name_normalizes_unicode_and_rejects_controls() -> None:
     for value in ("", " " * 3, "x" * 101, "bad\nname", 42):
         with pytest.raises(ValueError):
             normalize_display_name(value)
+
+
+def test_purpose_normalizes_and_rejects_invalid_values() -> None:
+    assert normalize_purpose("  Réserve a trip  ") == "Réserve a trip"
+    for value in ("", "x" * 201, "bad\npurpose", 42):
+        with pytest.raises(ValueError):
+            normalize_purpose(value)
 
 
 def test_uuid7_and_apns_tokens_are_canonical() -> None:
@@ -79,9 +87,10 @@ def test_public_jwk_thumbprint_and_signatures_round_trip() -> None:
         device_id=str(uuid7()),
         approval_id=str(uuid7()),
         nonce="nonce",
-        tool_name="hello_world",
+        tool_name="list_available_properties",
         arguments_hash="hash",
         decision="approved",
+        result_hash="result-hash",
         issued_at=issued_at,
     )
     verify_signature(jwk, decision, _encode(private.sign(decision, ec.ECDSA(hashes.SHA256()))))
