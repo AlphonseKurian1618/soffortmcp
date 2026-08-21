@@ -115,11 +115,11 @@ def create_app(
         token = get_access_token()
         principal = Principal.from_access_token(token) if token is not None else None
         if principal is None or principal.client_kind != "vscode":
-            return approval_error("approval_unavailable")
+            approval_error("approval_unavailable")
         try:
             display_name = await approvals.request_hello_world(principal)
         except ApprovalError as error:
-            return approval_error(error.code.value)
+            approval_error(error.code.value)
         return approved_hello_world(display_name)
 
     server.tool(

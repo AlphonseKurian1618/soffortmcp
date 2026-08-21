@@ -1,6 +1,8 @@
 """Unit tests for approved MCP result construction."""
 
-from soffortbackend.tools import approval_error, approved_hello_world
+import pytest
+
+from soffortbackend.tools import ApprovalToolError, approval_error, approved_hello_world
 
 
 def test_approved_hello_world_contract() -> None:
@@ -22,8 +24,19 @@ def test_approved_hello_world_preserves_unicode_profile() -> None:
     }
 
 
-def test_approval_error_contains_no_structured_profile() -> None:
-    result = approval_error("approval_denied")
-    assert result.is_error is True
-    assert result.structured_content is None
-    assert result.content[0].text == "approval_denied"
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        ("profile_required", "Set your display name"),
+        ("phone_not_linked", "No iPhone is linked"),
+        ("notifications_unavailable", "notification could not be delivered"),
+        ("approval_denied", "denied on the iPhone"),
+        ("approval_timed_out", "before the request expired"),
+        ("approval_unavailable", "temporarily unavailable"),
+        ("unknown", "Phone approval failed"),
+    ],
+)
+def test_approval_error_is_meaningful_and_value_free(code: str, message: str) -> None:
+    """Expected failures disclose guidance but no profile or device data."""
+    with pytest.raises(ApprovalToolError, match=message):
+        approval_error(code)

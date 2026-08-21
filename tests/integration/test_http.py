@@ -254,6 +254,60 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
 
 
 @pytest.mark.asyncio
+async def test_expected_approval_failure_is_a_meaningful_mcp_tool_error(
+    settings: Settings,
+    fake_verifier,
+) -> None:
+    """Prevent approval failures from being masked by output-schema validation."""
+    app = create_app(settings, token_verifier=fake_verifier)
+    headers = {
+        "Authorization": "Bearer valid-test-token",
+        "Accept": "application/json, text/event-stream",
+        "MCP-Protocol-Version": "2026-07-28",
+    }
+    modern_meta = {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientInfo": {"name": "test-client", "version": "1"},
+        "io.modelcontextprotocol/clientCapabilities": {},
+    }
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+            headers=headers,
+        ) as client:
+            called = await client.post(
+                "/mcp",
+                headers={"Mcp-Method": "tools/call", "Mcp-Name": "hello_world"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "hello_world",
+                        "arguments": {},
+                        "_meta": modern_meta,
+                    },
+                },
+            )
+
+    assert called.status_code == 200
+    result = called.json()["result"]
+    assert result["isError"] is True
+    assert result["content"] == [
+        {
+            "type": "text",
+            "text": (
+                "Error executing tool hello_world: Set your display name in the "
+                "Soffort iPhone app, then try again."
+            ),
+        }
+    ]
+    assert "structuredContent" not in result
+    assert "validation error" not in called.text
+
+
+@pytest.mark.asyncio
 async def test_handshake_protocol_initializes_and_lists_tool(
     settings: Settings,
     fake_verifier,
