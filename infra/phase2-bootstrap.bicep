@@ -30,6 +30,9 @@ param entraIosClientId string
 param apnsKeyId string
 param apnsPrivateKeySecretVersion string
 
+@description('Git branch reconciled by the development-only bootstrap. Keep main outside review deployments.')
+param gitBranch string = 'main'
+
 var commonTags = {
   application: 'soffortbackend'
   environment: 'development'
@@ -258,7 +261,7 @@ resource fluxConfiguration 'Microsoft.KubernetesConfiguration/fluxConfigurations
       url: 'https://github.com/AlphonseKurian1618/soffortmcp.git'
       provider: 'Generic'
       repositoryRef: {
-        branch: 'main'
+        branch: gitBranch
       }
       syncIntervalInSeconds: 60
       timeoutInSeconds: 60
