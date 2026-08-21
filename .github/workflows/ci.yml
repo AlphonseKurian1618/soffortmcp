@@ -70,7 +70,7 @@ jobs:
       - name: Enforce Azure cost guardrails
         run: uv run python scripts/check-cost-guardrails.py /tmp/main.json
       - name: Install Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v4.2.4
       - name: Render and inspect the workload chart
