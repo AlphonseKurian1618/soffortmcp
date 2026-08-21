@@ -32,7 +32,7 @@ spec:
   values:
     image:
       repository: ${ACR_LOGIN_SERVER}/soffortbackend
-      digest: sha256:e6ee0ef7597cf595cd2d4df7ad3322070fa1c0f0466dd9e546d9cd880acc5af6
+      digest: sha256:d3856843ed5c05bb2c496f9607883d4afe04fa1927c2a705bfc36c72adf9cf4c
     identity:
       issuer: ${ENTRA_ISSUER}
       jwksUrl: ${ENTRA_JWKS_URL}
