@@ -1,4 +1,4 @@
-# ADR 0005: phone-mediated Concentrey vault disclosure
+# ADR 0005: phone-mediated Consentary vault disclosure
 
 ## Status
 

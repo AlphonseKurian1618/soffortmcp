@@ -1,4 +1,4 @@
-# Concentrey vault end-to-end runbook
+# Consentary vault end-to-end runbook
 
 This runbook proves Entra authentication, MCP authorization, physical-iPhone consent, selective disclosure, and the absence of server-side vault storage. Use fictional values only.
 
@@ -6,7 +6,7 @@ This runbook proves Entra authentication, MCP authorization, physical-iPhone con
 
 - Subscription: `86dfb8ca-2e38-4abb-9072-e8d077af295a`
 - Resource group / cluster: `rg-soffortbackend-dev-wus2` / `aks-soffortbackend-dev-wus2`
-- MCP endpoint: `https://concentrey.com/mcp`
+- MCP endpoint: `https://consentary.com/mcp`
 - External tenant: `85685fcd-3fc0-4032-982c-92ddd6efc37b`
 - VS Code public client: `9cea70e5-8b4c-4f37-bf6f-2d789ae49492`
 - iOS public client: `dcae2fbc-315f-41b0-9c47-17482098cbab`
@@ -40,19 +40,19 @@ Expected: two Ready app pods, Ready HelmRelease, and an `acr.../soffortbackend@s
 ## 2. Verify public boundary
 
 ```bash
-dig +short concentrey.com A
-curl --fail --silent https://concentrey.com/.well-known/oauth-protected-resource/mcp
-curl --include --request POST https://concentrey.com/mcp \
+dig +short consentary.com A
+curl --fail --silent https://consentary.com/.well-known/oauth-protected-resource/mcp
+curl --include --request POST https://consentary.com/mcp \
   --header 'content-type: application/json' --data '{}'
-curl --include https://concentrey.com/livez
+curl --include https://consentary.com/livez
 ```
 
-Expected: apex resolves to `4.242.124.73`; metadata resource is exactly `https://concentrey.com/mcp`; unauthenticated MCP returns 401 with the RFC 9728 metadata challenge; health is not publicly routed. Inspect the certificate in a browser and require a trusted, unexpired chain.
+Expected: apex resolves to `4.242.124.73`; metadata resource is exactly `https://consentary.com/mcp`; unauthenticated MCP returns 401 with the RFC 9728 metadata challenge; health is not publicly routed. Inspect the certificate in a browser and require a trusted, unexpired chain.
 
 ## 3. Update and prepare the iPhone
 
-1. Open `/Users/alphonsekurian/Code/VaultBackend2/AIVaultApp/Concentrey.xcodeproj` and run the
-   `Concentrey` scheme on the registered physical iPhone. Because `com.concentrey.app` is a new app
+1. Open `/Users/alphonsekurian/Code/VaultBackend2/AIVaultApp/Consentary.xcodeproj` and run the
+   `Consentary` scheme on the registered physical iPhone. Because `com.consentary.app` is a new app
    identity, authenticate and enroll this installation as a new device.
 2. Sign in using the same External ID method/account used by VS Code. Test Apple first; repeat the authentication gate with email OTP separately.
 3. Allow notifications and confirm Settings says **This iPhone is linked**.

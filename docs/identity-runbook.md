@@ -10,21 +10,21 @@ Never paste the `.p8`, generated Apple client secret, authorization code, ID tok
 
 ## Registration contract
 
-The identity bootstrap renames the existing registrations in place to `concentrey-api`,
-`concentrey-vscode`, and `concentrey-ios`; their client IDs remain unchanged. The API uses
-Application ID URI `https://concentrey.com/mcp` with delegated permissions
+The identity bootstrap renames the existing registrations in place to `consentary-api`,
+`consentary-vscode`, and `consentary-ios`; their client IDs remain unchanged. The API uses
+Application ID URI `https://consentary.com/mcp` with delegated permissions
 `soffortbackend.access` and `soffortbackend.mobile`. The VS Code client has these exact redirects:
 
 - `http://127.0.0.1:33418`
 - `https://vscode.dev/redirect`
 
-The secretless iOS client uses redirect `msauth.com.concentrey.app://auth`. VS Code receives only
+The secretless iOS client uses redirect `msauth.com.consentary.app://auth`. VS Code receives only
 `soffortbackend.access`; iOS receives only `soffortbackend.mobile`. The current non-secret iOS
 client ID is `dcae2fbc-315f-41b0-9c47-17482098cbab`.
 
 Configure the Apple identity provider and user flow in the External ID portal. Register the
 federation callback displayed by Entra in Apple Developer; it is an Entra `ciamlogin.com` URL, not
-`https://concentrey.com/mcp`. Enable Apple and Email One Time Passcode, allow self-service signup for
+`https://consentary.com/mcp`. Enable Apple and Email One Time Passcode, allow self-service signup for
 any verified inbox, associate both public clients, and grant admin consent to their separate API permissions. Entra
 sends and validates the email code; no mail credential belongs in this repository or AKS.
 
@@ -52,7 +52,7 @@ The repeatable PKCE probe passed the protocol checks against the configured Exte
 
 - RS256 signature, exact issuer, API audience, tenant, and VS Code authorized-party claims
 - `soffortbackend.access` delegated permission
-- PKCE S256 and the MCP `resource=https://concentrey.com/mcp` parameter
+- PKCE S256 and the MCP `resource=https://consentary.com/mcp` parameter
 - authorization-code exchange and refresh-token issuance
 
 The owner enabled open verified-email OTP registration. On 2026-08-20, Microsoft Graph reported the

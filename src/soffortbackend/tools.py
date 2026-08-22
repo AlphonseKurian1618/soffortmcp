@@ -1,4 +1,4 @@
-"""MCP result contracts for phone-mediated Concentrey vault consent."""
+"""MCP result contracts for phone-mediated Consentary vault consent."""
 
 from typing import Annotated, Literal, Never
 
@@ -49,10 +49,10 @@ class ApprovalToolError(Exception):
 
 _APPROVAL_ERROR_MESSAGES = {
     "phone_not_linked": (
-        "No iPhone is linked. Open Concentrey and link this iPhone, then try again."
+        "No iPhone is linked. Open Consentary and link this iPhone, then try again."
     ),
     "notifications_unavailable": (
-        "The Concentrey notification could not be delivered. Open Concentrey, verify notifications "
+        "The Consentary notification could not be delivered. Open Consentary, verify notifications "
         "are enabled, and try again."
     ),
     "approval_timed_out": (
@@ -104,7 +104,7 @@ def request_result(
         "approved": f"The user approved {len(properties)} requested properties.",
         "partially_approved": f"The user approved {len(properties)} of the requested properties.",
         "denied": "The user denied the request.",
-        "unavailable": "None of the requested properties is available in this Concentrey vault.",
+        "unavailable": "None of the requested properties is available in this Consentary vault.",
     }[status]
     return _result(output, summary)
 

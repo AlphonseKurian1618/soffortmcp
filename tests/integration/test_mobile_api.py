@@ -1,4 +1,4 @@
-"""HTTP integration tests for the authenticated Concentrey consent surface."""
+"""HTTP integration tests for the authenticated Consentary consent surface."""
 
 import base64
 from datetime import UTC, datetime, timedelta
@@ -138,7 +138,7 @@ async def test_device_enrollment_pending_recovery_and_signed_decision(
                 tool_name="list_available_properties",
                 arguments_hash="fixture-arguments-hash",
                 requester="VS Code",
-                purpose="List the properties currently available in this Concentrey vault.",
+                purpose="List the properties currently available in this Consentary vault.",
                 requested_keys=(),
                 created_at=now,
                 expires_at=now + timedelta(seconds=60),

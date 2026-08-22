@@ -415,7 +415,7 @@ async def _approval_response(
 def _problem(status: int, code: str, *, headers: dict[str, str] | None = None) -> JSONResponse:
     return JSONResponse(
         {
-            "type": f"https://concentrey.com/problems/{code}",
+            "type": f"https://consentary.com/problems/{code}",
             "title": code.replace("_", " ").title(),
             "status": status,
             "code": code,

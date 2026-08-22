@@ -93,7 +93,7 @@ spec:
             - name: SOFFORT_APNS_ENVIRONMENT
               value: {{ .Values.approval.apnsEnvironment | quote }}
             - name: SOFFORT_ALLOWED_HOSTS_CSV
-              value: concentrey.com
+              value: consentary.com
             - name: SOFFORT_ALLOWED_ORIGINS_CSV
               value: https://vscode.dev
             - name: SOFFORT_LOG_LEVEL

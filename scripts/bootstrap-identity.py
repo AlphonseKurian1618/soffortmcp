@@ -20,17 +20,17 @@ from typing import Any, cast
 from uuid import uuid4
 
 GRAPH = "https://graph.microsoft.com/v1.0"
-API_NAME = "concentrey-api"
-CLIENT_NAME = "concentrey-vscode"
-IOS_CLIENT_NAME = "concentrey-ios"
+API_NAME = "consentary-api"
+CLIENT_NAME = "consentary-vscode"
+IOS_CLIENT_NAME = "consentary-ios"
 LEGACY_API_NAME = "soffortbackend-api"
 LEGACY_CLIENT_NAME = "soffortbackend-vscode"
 LEGACY_IOS_CLIENT_NAME = "soffortbackend-ios"
 SCOPE_VALUE = "soffortbackend.access"
 MOBILE_SCOPE_VALUE = "soffortbackend.mobile"
-RESOURCE_URI = "https://concentrey.com/mcp"
+RESOURCE_URI = "https://consentary.com/mcp"
 REDIRECTS = ["http://127.0.0.1:33418", "https://vscode.dev/redirect"]
-IOS_REDIRECTS = ["msauth.com.concentrey.app://auth"]
+IOS_REDIRECTS = ["msauth.com.consentary.app://auth"]
 
 
 class GraphClient:
@@ -87,7 +87,7 @@ def find_application(
     display_name: str,
     *legacy_display_names: str,
 ) -> dict[str, Any] | None:
-    """Find one registration by its current or pre-Concentrey display name."""
+    """Find one registration by its current or pre-Consentary display name."""
     applications: list[dict[str, Any]] = []
     for candidate in (display_name, *legacy_display_names):
         escaped = candidate.replace("'", "''")
@@ -167,9 +167,9 @@ def scope_definition(scope_id: str, value: str) -> dict[str, Any]:
     description = (
         "Manage the signed-in user's profile, devices, and phone approvals."
         if mobile
-        else "Access the authenticated Concentrey MCP tools."
+        else "Access the authenticated Consentary MCP tools."
     )
-    display_name = "Use Concentrey mobile approval" if mobile else "Access Concentrey"
+    display_name = "Use Consentary mobile approval" if mobile else "Access Consentary"
     return {
         "adminConsentDescription": description,
         "adminConsentDisplayName": display_name,
@@ -213,7 +213,7 @@ def ensure_ios_application(
     api_app_id: str,
     scope_id: str,
 ) -> dict[str, Any]:
-    """Create or normalize the secretless Concentrey iOS registration."""
+    """Create or normalize the secretless Consentary iOS registration."""
     body = {
         "displayName": IOS_CLIENT_NAME,
         "signInAudience": "AzureADMyOrg",
@@ -315,18 +315,18 @@ def update_vscode(client_id: str) -> None:
         raise RuntimeError(".vscode/mcp.json servers must be a JSON object")
     servers = cast(dict[str, Any], raw_servers)
     raw_server: Any = (
-        servers.pop("soffortbackend", None) or servers.get("concentrey") or dict[str, Any]()
+        servers.pop("soffortbackend", None) or servers.get("consentary") or dict[str, Any]()
     )
     if not isinstance(raw_server, dict):
-        raise RuntimeError("The Concentrey MCP server definition must be a JSON object")
+        raise RuntimeError("The Consentary MCP server definition must be a JSON object")
     server = cast(dict[str, Any], raw_server)
     server["type"] = "http"
     server["url"] = RESOURCE_URI
     raw_oauth = server.setdefault("oauth", {})
     if not isinstance(raw_oauth, dict):
-        raise RuntimeError("The Concentrey OAuth definition must be a JSON object")
+        raise RuntimeError("The Consentary OAuth definition must be a JSON object")
     raw_oauth["clientId"] = client_id
-    servers["concentrey"] = server
+    servers["consentary"] = server
     path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
 

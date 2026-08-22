@@ -182,8 +182,8 @@ class APNsApprovalNotifier:
         payload = {
             "aps": {
                 "alert": {
-                    "title": "Concentrey request",
-                    "body": "Open Concentrey to review which information was requested.",
+                    "title": "Consentary request",
+                    "body": "Open Consentary to review which information was requested.",
                 },
                 "sound": "default",
             },

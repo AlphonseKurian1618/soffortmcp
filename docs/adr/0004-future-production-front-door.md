@@ -8,5 +8,5 @@ Before a production launch, budget and design Azure Front Door Premium with mana
 
 ## Development constraint
 
-No Azure Front Door resource, feature flag, Bicep module, DNS dependency, or charge is permitted in the development deployment. The stable public interface remains `https://concentrey.com/mcp`, allowing the future edge layer to be inserted without changing MCP tools or authentication semantics.
+No Azure Front Door resource, feature flag, Bicep module, DNS dependency, or charge is permitted in the development deployment. The stable public interface remains `https://consentary.com/mcp`, allowing the future edge layer to be inserted without changing MCP tools or authentication semantics.
 
