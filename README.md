@@ -1,7 +1,7 @@
-# Concentrey MCP server
+# Consentary MCP server
 
-The Concentrey MCP server (internally packaged as `soffortbackend` for in-place deployment
-compatibility) serves the iPhone vault at `https://concentrey.com/mcp` and exposes exactly two tools:
+The Consentary MCP server (internally packaged as `soffortbackend` for in-place deployment
+compatibility) serves the iPhone vault at `https://consentary.com/mcp` and exposes exactly two tools:
 
 - `list_available_properties()` reads value-free metadata for every populated vault field without an approval prompt.
 - `request_properties(properties, purpose)` asks the phone to selectively release fields identified by the opaque handles returned from discovery.
@@ -34,7 +34,7 @@ Copy `.env.example` to `.env` and supply real Entra, Cosmos, APNs, workload iden
 
 ## Deployment
 
-Development uses AKS Free in West US 2, two scheduled PAYG ARM64 nodes, ACR Basic, direct Traefik ingress, cert-manager, serverless Cosmos DB, Standard Key Vault, and Flux. GoDaddy remains authoritative for `concentrey.com`. Azure Front Door, WAF, and private origin are production TODOs and are not provisioned.
+Development uses AKS Free in West US 2, two scheduled PAYG ARM64 nodes, ACR Basic, direct Traefik ingress, cert-manager, serverless Cosmos DB, Standard Key Vault, and Flux. GoDaddy remains authoritative for `consentary.com`. Azure Front Door, WAF, and private origin are production TODOs and are not provisioned.
 
 ```bash
 az account set --subscription 86dfb8ca-2e38-4abb-9072-e8d077af295a

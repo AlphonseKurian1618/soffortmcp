@@ -25,7 +25,7 @@ class DisclosureError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class DisclosureKey:
-    """Public RSA JWK served only to the authenticated Concentrey app."""
+    """Public RSA JWK served only to the authenticated Consentary app."""
 
     kid: str
     n: str

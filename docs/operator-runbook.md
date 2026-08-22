@@ -6,9 +6,9 @@
 2. Authenticate `az` to subscription `86dfb8ca-2e38-4abb-9072-e8d077af295a` and authenticate `gh` as a repository administrator.
 3. Run `./scripts/preflight.sh` and address every SKU, identity, or AKS-version failure.
 4. Run `./scripts/bootstrap-azure.sh --budget-email <operator-email>`. This creates the development resource group, budget, and scoped GitHub OIDC identity. Flux reads the public repository over HTTPS and needs no deploy key.
-5. Authenticate Azure CLI to the External ID tenant and run `python scripts/bootstrap-identity.py --tenant-id <external-tenant-guid> --tenant-subdomain <ciam-subdomain> --user-flow-display-name soffortbackend_apple_email_v2 --github-repository AlphonseKurian1618/soffortmcp`. This creates both public clients, associates them with the active flow, and writes non-secret identity outputs to protected GitHub environment variables.
+5. Authenticate Azure CLI to the External ID tenant and run `python scripts/bootstrap-identity.py --tenant-id <external-tenant-guid> --tenant-subdomain <ciam-subdomain> --user-flow-display-name consentary_sign_up_sign_in --github-repository AlphonseKurian1618/soffortmcp`. This creates both public clients, associates them with the active flow, and writes non-secret identity outputs to protected GitHub environment variables.
 6. In Apple Developer, enable Push Notifications for the explicit App ID
-   `com.concentrey.app`. The existing token-based APNs key `KHZKTB324C` is team-scoped and may be
+   `com.consentary.app`. The existing token-based APNs key `KHZKTB324C` is team-scoped and may be
    reused; the Sign in with Apple key `599S6S73Y2` remains a separate credential.
 7. Record the trusted shell's current public IPv4 address as `KEY_VAULT_OPERATOR_IP` in the protected development environment before applying infrastructure. Key Vault allows that address only for credential import/rotation and the AKS static outbound address for runtime reads. Then import the new APNs `.p8` from that trusted shell. Suppress normal output and never put its contents in shell history:
 
@@ -52,7 +52,7 @@ Merging application code runs CI and publishes a multi-architecture image only a
 
 Rollback by reverting the digest commit. Flux applies the previous digest and Helm remediation rolls back a failed upgrade automatically. GitHub-hosted runners never run `kubectl` or `helm upgrade` against the private cluster.
 
-The Concentrey disclosure key is `permi-disclosure`, RSA 2048, and non-exportable. Rotate it by creating a new enabled Key Vault key version, deploy/restart the app so newly created requests advertise the new `kid`, complete the physical-iPhone E2E, then wait longer than the two-minute request deadline plus five-minute Cosmos TTL before disabling an old version. Do not delete old versions during development incident recovery; in-flight JWE is version-addressed.
+The Consentary disclosure key is `permi-disclosure`, RSA 2048, and non-exportable. Rotate it by creating a new enabled Key Vault key version, deploy/restart the app so newly created requests advertise the new `kid`, complete the physical-iPhone E2E, then wait longer than the two-minute request deadline plus five-minute Cosmos TTL before disabling an old version. Do not delete old versions during development incident recovery; in-flight JWE is version-addressed.
 
 ## Smoke tests
 
@@ -60,12 +60,12 @@ After DNS, TLS, and Flux report healthy:
 
 ```bash
 curl --fail --silent --show-error \
-  https://concentrey.com/.well-known/oauth-protected-resource/mcp
-curl --include --request POST https://concentrey.com/mcp \
+  https://consentary.com/.well-known/oauth-protected-resource/mcp
+curl --include --request POST https://consentary.com/mcp \
   --header 'content-type: application/json' --data '{}'
 ```
 
-The metadata request must return 200 and canonical resource `https://concentrey.com/mcp`. The unauthenticated MCP request must return 401 with `WWW-Authenticate` pointing to that metadata. `/livez` and `/readyz` must not be publicly routed.
+The metadata request must return 200 and canonical resource `https://consentary.com/mcp`. The unauthenticated MCP request must return 401 with `WWW-Authenticate` pointing to that metadata. `/livez` and `/readyz` must not be publicly routed.
 
 Complete the real VS Code, physical iPhone, Apple, and Email OTP gates before unsuspending the first application
 release. Run `scripts/load-test.py` only with a short-lived development token in a local shell;

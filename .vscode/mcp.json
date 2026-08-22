@@ -1,8 +1,8 @@
 {
   "servers": {
-    "concentrey": {
+    "consentary": {
       "type": "http",
-      "url": "https://concentrey.com/mcp",
+      "url": "https://consentary.com/mcp",
       "oauth": {
         "clientId": "9cea70e5-8b4c-4f37-bf6f-2d789ae49492"
       }

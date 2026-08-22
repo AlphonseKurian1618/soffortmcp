@@ -10,21 +10,23 @@ Never paste the `.p8`, generated Apple client secret, authorization code, ID tok
 
 ## Registration contract
 
-The identity bootstrap renames the existing registrations in place to `concentrey-api`,
-`concentrey-vscode`, and `concentrey-ios`; their client IDs remain unchanged. The API uses
-Application ID URI `https://concentrey.com/mcp` with delegated permissions
+The identity bootstrap renames the existing registrations and enterprise applications in place to
+`Consentary API`, `Consentary for VS Code`, and `Consentary`; their client IDs remain unchanged.
+Set the External ID organization name to `Consentary Customers` under **Tenant properties** in the
+Entra admin center; Microsoft Graph exposes this value as read-only. The API uses
+Application ID URI `https://consentary.com/mcp` with delegated permissions
 `soffortbackend.access` and `soffortbackend.mobile`. The VS Code client has these exact redirects:
 
 - `http://127.0.0.1:33418`
 - `https://vscode.dev/redirect`
 
-The secretless iOS client uses redirect `msauth.com.concentrey.app://auth`. VS Code receives only
+The secretless iOS client uses redirect `msauth.com.consentary.app://auth`. VS Code receives only
 `soffortbackend.access`; iOS receives only `soffortbackend.mobile`. The current non-secret iOS
 client ID is `dcae2fbc-315f-41b0-9c47-17482098cbab`.
 
 Configure the Apple identity provider and user flow in the External ID portal. Register the
 federation callback displayed by Entra in Apple Developer; it is an Entra `ciamlogin.com` URL, not
-`https://concentrey.com/mcp`. Enable Apple and Email One Time Passcode, allow self-service signup for
+`https://consentary.com/mcp`. Enable Apple and Email One Time Passcode, allow self-service signup for
 any verified inbox, associate both public clients, and grant admin consent to their separate API permissions. Entra
 sends and validates the email code; no mail credential belongs in this repository or AKS.
 
@@ -52,14 +54,15 @@ The repeatable PKCE probe passed the protocol checks against the configured Exte
 
 - RS256 signature, exact issuer, API audience, tenant, and VS Code authorized-party claims
 - `soffortbackend.access` delegated permission
-- PKCE S256 and the MCP `resource=https://concentrey.com/mcp` parameter
+- PKCE S256 and the MCP `resource=https://consentary.com/mcp` parameter
 - authorization-code exchange and refresh-token issuance
 
 The owner enabled open verified-email OTP registration. On 2026-08-20, Microsoft Graph reported the
-active `soffortbackend_apple_email_v2` flow with both Apple and `EmailOtpSignup-OAUTH`, email required
-for the local OTP path, and self-signup enabled. Phase 2 associated both `soffortbackend-vscode` and
-`soffortbackend-ios` with that active flow through Microsoft Graph. The earlier
-flow remains unassociated as a rollback artifact and must not be treated as active configuration.
+active `consentary_sign_up_sign_in` flow with both Apple and `EmailOtpSignup-OAUTH`, email required
+for the local OTP path, and self-signup enabled. Phase 2 associated both `Consentary for VS Code`
+and `Consentary` with that active flow through Microsoft Graph. The earlier Apple-only flow is now
+named `consentary_apple_retired`; it remains unassociated as a rollback artifact and must not be
+treated as active configuration.
 
 Fresh Apple authentication now passes when the probe includes Microsoft's documented issuer
 acceleration parameter `domain_hint=apple`. The 2026-08-20 run reached the native Apple sheet and

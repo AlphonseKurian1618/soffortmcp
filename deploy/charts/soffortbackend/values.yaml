@@ -13,9 +13,9 @@ identity:
   vscodeClientId: 00000000-0000-0000-0000-000000000000
   iosClientId: 00000000-0000-0000-0000-000000000001
   scopeValue: soffortbackend.access
-  scopeUri: https://concentrey.com/mcp/soffortbackend.access
+  scopeUri: https://consentary.com/mcp/soffortbackend.access
   mobileScopeValue: soffortbackend.mobile
-  mobileScopeUri: https://concentrey.com/mcp/soffortbackend.mobile
+  mobileScopeUri: https://consentary.com/mcp/soffortbackend.mobile
 
 approval:
   cosmosEndpoint: https://example.documents.azure.com:443/
@@ -28,7 +28,7 @@ approval:
   apnsSecretVersion: replace-with-immutable-version
   apnsKeyId: ABCDEFGHIJ
   apnsTeamId: TTP26ZNL9Q
-  apnsTopic: com.concentrey.app
+  apnsTopic: com.consentary.app
   apnsEnvironment: sandbox
 
 service:
@@ -49,9 +49,9 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
 
 gateway:
-  hostname: concentrey.com
+  hostname: consentary.com
   className: traefik
-  tlsSecretName: concentrey-com-tls
+  tlsSecretName: consentary-com-tls
   # Gateway listeners bind Traefik's internal entrypoint ports. The Azure
   # LoadBalancer Service exposes these externally as standard ports 80/443.
   httpListenerPort: 8000

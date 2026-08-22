@@ -117,14 +117,14 @@ def create_app(
                 await verifier.close()
 
     server: MCPServer[None] = MCPServer(
-        name="concentrey",
-        title="Concentrey",
-        description="Phone-consented access to the user's local Concentrey vault.",
+        name="consentary",
+        title="Consentary",
+        description="Phone-consented access to the user's local Consentary vault.",
         instructions=(
             "Discover populated property metadata, then request exact properties "
             "for a stated purpose."
         ),
-        website_url="https://concentrey.com",
+        website_url="https://consentary.com",
         version="0.1.0",
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(settings.canonical_issuer),
@@ -156,7 +156,7 @@ def create_app(
     server.tool(
         name="list_available_properties",
         description=(
-            "List populated Concentrey property metadata without prompting the phone. "
+            "List populated Consentary property metadata without prompting the phone. "
             "This never returns values. Use the exact returned key handles as "
             "request_properties input; never translate or guess them."
         ),
@@ -181,7 +181,7 @@ def create_app(
     server.tool(
         name="request_properties",
         description=(
-            "Ask the user to selectively approve exact Concentrey property values "
+            "Ask the user to selectively approve exact Consentary property values "
             "for a short stated purpose."
         ),
         structured_output=True,

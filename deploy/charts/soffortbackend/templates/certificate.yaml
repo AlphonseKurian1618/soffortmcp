@@ -1,7 +1,7 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: concentrey-com
+  name: consentary-com
   labels:
     {{- include "soffortbackend.labels" . | nindent 4 }}
 spec:
