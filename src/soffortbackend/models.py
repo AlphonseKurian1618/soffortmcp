@@ -91,12 +91,25 @@ class Device:
 
 @dataclass(frozen=True, slots=True)
 class PropertyMetadata:
-    """Phone-approved, value-free metadata for one dynamic vault property."""
+    """Value-free metadata for one dynamic vault property."""
 
     key: str
     display_name: str
     value_type: str
     sensitivity: str
+
+
+@dataclass(frozen=True, slots=True)
+class PropertyIndex:
+    """Latest value-free vault manifest published by the signed-in iPhone.
+
+    Values never enter this index. It exists so discovery can remain read-only
+    while value retrieval continues through explicit phone consent.
+    """
+
+    partition_key: str
+    properties: tuple[PropertyMetadata, ...]
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

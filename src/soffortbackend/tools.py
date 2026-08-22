@@ -26,10 +26,10 @@ class PropertyValueOutput(PropertyMetadataOutput):
 
 
 class ListAvailablePropertiesOutput(BaseModel):
-    """Structured discovery result including an explicit denial outcome."""
+    """Structured, value-free discovery result."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    status: Literal["approved", "denied"]
+    status: Literal["available"]
     properties: list[PropertyMetadataOutput]
 
 
@@ -62,20 +62,12 @@ _APPROVAL_ERROR_MESSAGES = {
 
 
 def list_result(
-    approval: Approval,
+    metadata: tuple[PropertyMetadata, ...],
 ) -> Annotated[CallToolResult, ListAvailablePropertiesOutput]:
-    """Build discovery output from metadata authenticated by the phone decision."""
-    metadata = () if approval.status is ApprovalStatus.DENIED else approval.property_metadata
+    """Build discovery output from the latest value-free phone index."""
     properties = [_metadata(item) for item in metadata]
-    status: Literal["approved", "denied"] = (
-        "denied" if approval.status is ApprovalStatus.DENIED else "approved"
-    )
-    output = ListAvailablePropertiesOutput(status=status, properties=properties)
-    summary = (
-        "The user denied property discovery."
-        if status == "denied"
-        else f"The user approved discovery of {len(properties)} available properties."
-    )
+    output = ListAvailablePropertiesOutput(status="available", properties=properties)
+    summary = f"Found {len(properties)} available vault properties."
     return _result(output, summary)
 
 

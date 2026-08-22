@@ -15,7 +15,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from soffortbackend.approval import REQUEST_TOOL, ApprovalService
-from soffortbackend.catalog import MAX_AVAILABLE_PROPERTIES
+from soffortbackend.catalog import MAX_AVAILABLE_PROPERTIES, validate_property_metadata
 from soffortbackend.device_security import (
     canonical_uuid7,
     enrollment_message,
@@ -160,6 +160,23 @@ def register_mobile_routes(
 
         return await _execute(request, settings, operation)
 
+    async def put_property_index(request: Request) -> Response:
+        async def operation(principal: Principal) -> Response:
+            body = await _read_object(request)
+            _require_exact_members(body, {"properties"})
+            properties = validate_property_metadata(_metadata_tuple(body["properties"]))
+            index = await store.put_property_index(principal.partition_key, properties)
+            # Only value-free metadata is acknowledged. Vault values never
+            # cross this endpoint and remain gated by the decision flow below.
+            return JSONResponse(
+                {
+                    "property_count": len(index.properties),
+                    "updated_at": _iso(index.updated_at),
+                }
+            )
+
+        return await _execute(request, settings, operation)
+
     async def get_approval(request: Request) -> Response:
         async def operation(principal: Principal) -> Response:
             approval_id = canonical_uuid7(request.path_params["approval_id"], "approval_id")
@@ -256,6 +273,7 @@ def register_mobile_routes(
     server.custom_route("/v1/devices/enrollment-challenges", methods=["POST"])(create_challenge)
     server.custom_route("/v1/devices/{device_id}", methods=["PUT"])(put_device)
     server.custom_route("/v1/devices/{device_id}", methods=["DELETE"])(delete_device)
+    server.custom_route("/v1/property-index", methods=["PUT"])(put_property_index)
     server.custom_route("/v1/approvals", methods=["GET"])(list_approvals)
     server.custom_route("/v1/approvals/{approval_id}", methods=["GET"])(get_approval)
     server.custom_route("/v1/approvals/{approval_id}/decisions", methods=["POST"])(decide_approval)

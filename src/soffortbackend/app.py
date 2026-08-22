@@ -146,18 +146,19 @@ def create_app(
     async def list_available_properties() -> Annotated[
         CallToolResult, ListAvailablePropertiesOutput
     ]:
-        """Ask the iPhone before revealing which vault fields are populated."""
+        """List value-free vault metadata without requesting user approval."""
         try:
-            approval = await approvals.request_available_properties(vscode_principal())
-        except ApprovalError as error:
-            approval_error(error.code.value)
-        return list_result(approval)
+            index = await store.get_property_index(vscode_principal().partition_key)
+        except Exception:
+            approval_error("approval_unavailable")
+        return list_result(index.properties if index is not None else ())
 
     server.tool(
         name="list_available_properties",
         description=(
-            "Ask the user's iPhone for permission to list populated Permi property metadata. "
-            "This never returns property values."
+            "List populated Consentary property metadata without prompting the phone. "
+            "This never returns values. Use the exact returned key handles as "
+            "request_properties input; never translate or guess them."
         ),
         structured_output=True,
     )(list_available_properties)

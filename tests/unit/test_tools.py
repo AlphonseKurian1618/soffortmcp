@@ -31,16 +31,9 @@ def _approval(**changes) -> Approval:
 
 
 def test_discovery_returns_metadata_without_values() -> None:
-    approval = _approval(
-        tool_name="list_available_properties",
-        requested_keys=(),
-        status=ApprovalStatus.APPROVED,
-        available_keys=(EMAIL_KEY,),
-        property_metadata=(EMAIL_METADATA,),
-    )
-    result = list_result(approval)
+    result = list_result((EMAIL_METADATA,))
     assert result.structured_content == {
-        "status": "approved",
+        "status": "available",
         "properties": [
             {
                 "key": EMAIL_KEY,
@@ -51,6 +44,7 @@ def test_discovery_returns_metadata_without_values() -> None:
         ],
     }
     assert all("value" not in item for item in result.structured_content["properties"])
+    assert result.content[0].text == "Found 1 available vault properties."
 
 
 def test_selective_request_returns_values_only_in_structured_content() -> None:

@@ -23,6 +23,7 @@ from soffortbackend.models import (
     Device,
     EnrollmentChallenge,
     Profile,
+    PropertyIndex,
     PropertyMetadata,
     StoreConflict,
     StoreUnavailable,
@@ -84,6 +85,16 @@ class ApprovalStore(Protocol):
         """Stop routing pushes to a provider-rejected device."""
         ...
 
+    async def get_property_index(self, partition_key: str) -> PropertyIndex | None:
+        """Read the account's latest value-free vault manifest."""
+        ...
+
+    async def put_property_index(
+        self, partition_key: str, properties: tuple[PropertyMetadata, ...]
+    ) -> PropertyIndex:
+        """Replace the account's value-free vault manifest."""
+        ...
+
     async def create_approval(self, approval: Approval) -> None:
         """Create an immutable pending approval identity."""
         ...
@@ -130,6 +141,7 @@ class InMemoryApprovalStore:
         self.profiles: dict[str, Profile] = {}
         self.challenges: dict[tuple[str, str], EnrollmentChallenge] = {}
         self.devices: dict[tuple[str, str], Device] = {}
+        self.property_indexes: dict[str, PropertyIndex] = {}
         self.approvals: dict[tuple[str, str], Approval] = {}
         self._versions: dict[tuple[str, str], int] = {}
         self._lock = asyncio.Lock()
@@ -209,6 +221,22 @@ class InMemoryApprovalStore:
                 self.devices[key] = replace(
                     device, notifications_enabled=False, updated_at=datetime.now(UTC)
                 )
+
+    async def get_property_index(self, partition_key: str) -> PropertyIndex | None:
+        """Read a fixture value-free property index."""
+        return self.property_indexes.get(partition_key)
+
+    async def put_property_index(
+        self, partition_key: str, properties: tuple[PropertyMetadata, ...]
+    ) -> PropertyIndex:
+        """Replace a fixture value-free property index."""
+        index = PropertyIndex(
+            partition_key=partition_key,
+            properties=properties,
+            updated_at=datetime.now(UTC),
+        )
+        self.property_indexes[partition_key] = index
+        return index
 
     async def create_approval(self, approval: Approval) -> None:
         """Create a unique fixture approval."""
@@ -437,6 +465,26 @@ class CosmosApprovalStore:
         except CosmosHttpResponseError as error:
             raise StoreUnavailable("Cosmos device update failed") from error
 
+    async def get_property_index(self, partition_key: str) -> PropertyIndex | None:
+        """Read the subject-scoped value-free property index."""
+        document = await self._read("property-index", partition_key)
+        return _property_index_from_document(document) if document is not None else None
+
+    async def put_property_index(
+        self, partition_key: str, properties: tuple[PropertyMetadata, ...]
+    ) -> PropertyIndex:
+        """Atomically replace the subject-scoped value-free property index."""
+        index = PropertyIndex(
+            partition_key=partition_key,
+            properties=properties,
+            updated_at=datetime.now(UTC),
+        )
+        try:
+            await self._require_container().upsert_item(_property_index_document(index))
+            return index
+        except CosmosHttpResponseError as error:
+            raise StoreUnavailable("Cosmos property index write failed") from error
+
     async def create_approval(self, approval: Approval) -> None:
         """Create a TTL-bound pending approval."""
         try:
@@ -606,6 +654,32 @@ def _device_from_document(document: dict[str, Any]) -> Device:
         apns_token=str(document["apns_token"]),
         apns_environment=str(document["apns_environment"]),
         notifications_enabled=bool(document["notifications_enabled"]),
+        updated_at=_datetime(document["updated_at"]),
+    )
+
+
+def _property_index_document(index: PropertyIndex) -> dict[str, Any]:
+    return {
+        "id": "property-index",
+        "kind": "property-index",
+        "partition_key": index.partition_key,
+        "properties": [asdict(item) for item in index.properties],
+        "updated_at": _iso(index.updated_at),
+    }
+
+
+def _property_index_from_document(document: dict[str, Any]) -> PropertyIndex:
+    return PropertyIndex(
+        partition_key=str(document["partition_key"]),
+        properties=tuple(
+            PropertyMetadata(
+                key=str(item["key"]),
+                display_name=str(item["display_name"]),
+                value_type=str(item["value_type"]),
+                sensitivity=str(item["sensitivity"]),
+            )
+            for item in document.get("properties", [])
+        ),
         updated_at=_datetime(document["updated_at"]),
     )
 
