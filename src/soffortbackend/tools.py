@@ -5,16 +5,15 @@ from typing import Annotated, Literal, Never
 from mcp.types import CallToolResult, TextContent
 from pydantic import BaseModel, ConfigDict
 
-from soffortbackend.catalog import PROPERTY_BY_KEY, PropertyKey
 from soffortbackend.disclosure import DisclosedProperty
-from soffortbackend.models import Approval, ApprovalStatus
+from soffortbackend.models import Approval, ApprovalStatus, PropertyMetadata
 
 
 class PropertyMetadataOutput(BaseModel):
-    """Value-free metadata for one populated catalog property."""
+    """Value-free metadata for one populated vault property."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    key: PropertyKey
+    key: str
     display_name: str
     value_type: str
     sensitivity: str
@@ -40,8 +39,8 @@ class RequestPropertiesOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     status: Literal["approved", "partially_approved", "denied", "unavailable"]
     properties: list[PropertyValueOutput]
-    denied_properties: list[PropertyKey]
-    unavailable_properties: list[PropertyKey]
+    denied_properties: list[str]
+    unavailable_properties: list[str]
 
 
 class ApprovalToolError(Exception):
@@ -65,9 +64,9 @@ _APPROVAL_ERROR_MESSAGES = {
 def list_result(
     approval: Approval,
 ) -> Annotated[CallToolResult, ListAvailablePropertiesOutput]:
-    """Build discovery output without ever accepting phone-authored labels."""
-    keys = () if approval.status is ApprovalStatus.DENIED else approval.available_keys
-    properties = [_metadata(PropertyKey(key)) for key in keys]
+    """Build discovery output from metadata authenticated by the phone decision."""
+    metadata = () if approval.status is ApprovalStatus.DENIED else approval.property_metadata
+    properties = [_metadata(item) for item in metadata]
     status: Literal["approved", "denied"] = (
         "denied" if approval.status is ApprovalStatus.DENIED else "approved"
     )
@@ -86,12 +85,13 @@ def request_result(
 ) -> Annotated[CallToolResult, RequestPropertiesOutput]:
     """Build ordered output whose cleartext exists only in structured content."""
     by_key = {item.key: item.value for item in values}
+    metadata_by_key = {item.key: item for item in approval.property_metadata}
     properties = [
-        PropertyValueOutput(**_metadata(key).model_dump(), value=by_key[key])
-        for key in (PropertyKey(raw) for raw in approval.approved_keys)
+        PropertyValueOutput(**_metadata(metadata_by_key[key]).model_dump(), value=by_key[key])
+        for key in approval.approved_keys
     ]
-    denied = [PropertyKey(key) for key in approval.denied_keys]
-    unavailable = [PropertyKey(key) for key in approval.unavailable_keys]
+    denied = list(approval.denied_keys)
+    unavailable = list(approval.unavailable_keys)
     if approval.status is ApprovalStatus.DENIED:
         status: Literal["approved", "partially_approved", "denied", "unavailable"] = "denied"
     elif not properties:
@@ -120,10 +120,9 @@ def approval_error(code: str) -> Never:
     raise ApprovalToolError(_APPROVAL_ERROR_MESSAGES.get(code, "Phone consent failed. Try again."))
 
 
-def _metadata(key: PropertyKey) -> PropertyMetadataOutput:
-    definition = PROPERTY_BY_KEY[key]
+def _metadata(definition: PropertyMetadata) -> PropertyMetadataOutput:
     return PropertyMetadataOutput(
-        key=key,
+        key=definition.key,
         display_name=definition.display_name,
         value_type=definition.value_type,
         sensitivity=definition.sensitivity,

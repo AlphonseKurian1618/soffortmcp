@@ -90,6 +90,16 @@ class Device:
 
 
 @dataclass(frozen=True, slots=True)
+class PropertyMetadata:
+    """Phone-approved, value-free metadata for one dynamic vault property."""
+
+    key: str
+    display_name: str
+    value_type: str
+    sensitivity: str
+
+
+@dataclass(frozen=True, slots=True)
 class Approval:
     """One time-bounded consent request bound to an exact MCP invocation."""
 
@@ -112,6 +122,7 @@ class Approval:
     approved_keys: tuple[str, ...] = ()
     denied_keys: tuple[str, ...] = ()
     unavailable_keys: tuple[str, ...] = ()
+    property_metadata: tuple[PropertyMetadata, ...] = ()
     compact_jwe: str | None = None
     result_hash: str | None = None
     etag: str | None = None

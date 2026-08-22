@@ -6,19 +6,32 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid7
 
 import pytest
-from conftest import OBJECT_ID, TENANT_ID
+from conftest import (
+    EMAIL_KEY,
+    EMAIL_METADATA,
+    NAME_KEY,
+    NAME_METADATA,
+    OBJECT_ID,
+    TENANT_ID,
+)
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from soffortbackend.approval import ApprovalError, ApprovalErrorCode, ApprovalService
-from soffortbackend.catalog import PropertyKey
 from soffortbackend.device_security import decision_message
 from soffortbackend.disclosure import (
     DisclosedProperty,
     FakeDisclosureDecryptor,
     result_manifest_hash,
 )
-from soffortbackend.models import Approval, ApprovalStatus, Device, Principal, StoreConflict
+from soffortbackend.models import (
+    Approval,
+    ApprovalStatus,
+    Device,
+    Principal,
+    PropertyMetadata,
+    StoreConflict,
+)
 from soffortbackend.notifications import FakeApprovalNotifier
 from soffortbackend.settings import Settings
 from soffortbackend.store import InMemoryApprovalStore
@@ -97,6 +110,7 @@ def _signed_decision(
     approved_keys: tuple[str, ...] = (),
     denied_keys: tuple[str, ...] = (),
     unavailable_keys: tuple[str, ...] = (),
+    property_metadata: tuple[PropertyMetadata, ...] = (),
     compact_jwe: str | None = None,
 ) -> tuple[int, str, str]:
     result_hash = result_manifest_hash(
@@ -104,6 +118,7 @@ def _signed_decision(
         approved_keys=approved_keys,
         denied_keys=denied_keys,
         unavailable_keys=unavailable_keys,
+        property_metadata=property_metadata,
         compact_jwe=compact_jwe,
     )
     issued_at = int(datetime.now(UTC).timestamp())
@@ -149,10 +164,7 @@ async def test_discovery_returns_only_available_manifest(settings: Settings) -> 
         principal.partition_key, notifier.deliveries[0][0].approval_id
     )
     assert approval is not None
-    keys = (
-        PropertyKey.CONTACT_PERSONAL_EMAIL.value,
-        PropertyKey.IDENTITY_LEGAL_NAME.value,
-    )
+    keys = (EMAIL_KEY, NAME_KEY)
     await _decide(
         service,
         principal,
@@ -164,6 +176,7 @@ async def test_discovery_returns_only_available_manifest(settings: Settings) -> 
         approved_keys=(),
         denied_keys=(),
         unavailable_keys=(),
+        property_metadata=(EMAIL_METADATA, NAME_METADATA),
         compact_jwe=None,
     )
     assert (await pending).available_keys == keys
@@ -189,6 +202,7 @@ async def test_denial_is_a_structured_business_outcome(settings: Settings) -> No
         approved_keys=(),
         denied_keys=(),
         unavailable_keys=(),
+        property_metadata=(),
         compact_jwe=None,
     )
     assert (await pending).status is ApprovalStatus.DENIED
@@ -199,7 +213,7 @@ async def test_request_decrypts_only_approved_properties(settings: Settings) -> 
     service, store, notifier, disclosure, principal, private, device = await _configured_service(
         settings
     )
-    requested = (PropertyKey.CONTACT_PERSONAL_EMAIL, PropertyKey.IDENTITY_LEGAL_NAME)
+    requested = (EMAIL_KEY, NAME_KEY)
     pending = asyncio.create_task(
         service.request_properties(principal, requested, "Send my receipt")
     )
@@ -208,9 +222,7 @@ async def test_request_decrypts_only_approved_properties(settings: Settings) -> 
         principal.partition_key, notifier.deliveries[0][0].approval_id
     )
     assert approval is not None
-    disclosure.values[approval.approval_id] = (
-        DisclosedProperty(PropertyKey.CONTACT_PERSONAL_EMAIL, "person@example.test"),
-    )
+    disclosure.values[approval.approval_id] = (DisclosedProperty(EMAIL_KEY, "person@example.test"),)
     await _decide(
         service,
         principal,
@@ -219,13 +231,14 @@ async def test_request_decrypts_only_approved_properties(settings: Settings) -> 
         private,
         decision="approved",
         available_keys=(),
-        approved_keys=(PropertyKey.CONTACT_PERSONAL_EMAIL.value,),
-        denied_keys=(PropertyKey.IDENTITY_LEGAL_NAME.value,),
+        approved_keys=(EMAIL_KEY,),
+        denied_keys=(NAME_KEY,),
         unavailable_keys=(),
+        property_metadata=(EMAIL_METADATA, NAME_METADATA),
         compact_jwe="fixture",
     )
     result, values = await pending
-    assert result.approved_keys == (PropertyKey.CONTACT_PERSONAL_EMAIL.value,)
+    assert result.approved_keys == (EMAIL_KEY,)
     assert values == disclosure.values[approval.approval_id]
 
 
@@ -294,6 +307,7 @@ async def test_result_tampering_and_replay_are_rejected(settings: Settings) -> N
             approved_keys=(),
             denied_keys=(),
             unavailable_keys=(),
+            property_metadata=(),
             compact_jwe=None,
             result_hash="tampered",
             issued_at=int(datetime.now(UTC).timestamp()),
@@ -310,6 +324,7 @@ async def test_result_tampering_and_replay_are_rejected(settings: Settings) -> N
         approved_keys=(),
         denied_keys=(),
         unavailable_keys=(),
+        property_metadata=(),
         compact_jwe=None,
     )
     assert (await pending).status is ApprovalStatus.DENIED
@@ -325,6 +340,7 @@ async def test_result_tampering_and_replay_are_rejected(settings: Settings) -> N
             approved_keys=(),
             denied_keys=(),
             unavailable_keys=(),
+            property_metadata=(),
             compact_jwe=None,
         )
 
@@ -332,22 +348,22 @@ async def test_result_tampering_and_replay_are_rejected(settings: Settings) -> N
 @pytest.mark.parametrize(
     ("changes", "match"),
     [
-        ({"available_keys": ("contact.personalEmail",) * 2}, "duplicate"),
-        ({"available_keys": ("unknown",)}, "unknown"),
-        ({"decision": "denied", "available_keys": ("contact.personalEmail",)}, "denial"),
+        ({"available_keys": (EMAIL_KEY,) * 2}, "duplicate"),
+        ({"available_keys": ("unknown",)}, "invalid"),
+        ({"decision": "denied", "available_keys": (EMAIL_KEY,)}, "denial"),
         (
-            {"tool_name": "list_available_properties", "approved_keys": ("contact.personalEmail",)},
+            {"tool_name": "list_available_properties", "approved_keys": (EMAIL_KEY,)},
             "availability",
         ),
         ({"approved_keys": (), "denied_keys": ()}, "partition"),
         (
             {
-                "requested_keys": ("contact.personalEmail", "identity.legalName"),
-                "approved_keys": ("identity.legalName", "contact.personalEmail"),
+                "requested_keys": (EMAIL_KEY, NAME_KEY),
+                "approved_keys": (NAME_KEY, EMAIL_KEY),
             },
             "preserve request order",
         ),
-        ({"approved_keys": ("contact.personalEmail",), "compact_jwe": None}, "encrypted"),
+        ({"approved_keys": (EMAIL_KEY,), "compact_jwe": None}, "encrypted"),
     ],
 )
 def test_consent_result_shape_fails_closed(settings: Settings, changes, match) -> None:
@@ -355,11 +371,12 @@ def test_consent_result_shape_fails_closed(settings: Settings, changes, match) -
     values = {
         "tool_name": "request_properties",
         "decision": "approved",
-        "requested_keys": ("contact.personalEmail",),
+        "requested_keys": (EMAIL_KEY,),
         "available_keys": (),
-        "approved_keys": ("contact.personalEmail",),
+        "approved_keys": (EMAIL_KEY,),
         "denied_keys": (),
         "unavailable_keys": (),
+        "property_metadata": (EMAIL_METADATA,),
         "compact_jwe": "fixture",
     }
     values.update(changes)

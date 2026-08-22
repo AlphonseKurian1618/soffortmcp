@@ -6,12 +6,17 @@ from uuid import UUID
 import pytest
 from mcp.server.auth.provider import AccessToken
 
+from soffortbackend.models import PropertyMetadata
 from soffortbackend.settings import Settings
 
 TENANT_ID = UUID("11111111-1111-4111-8111-111111111111")
 CLIENT_ID = UUID("22222222-2222-4222-8222-222222222222")
 IOS_CLIENT_ID = UUID("33333333-3333-4333-8333-333333333333")
 OBJECT_ID = "44444444-4444-4444-8444-444444444444"
+EMAIL_KEY = "vault." + "a" * 43
+NAME_KEY = "vault." + "b" * 43
+EMAIL_METADATA = PropertyMetadata(EMAIL_KEY, "Personal · Email", "email", "moderate")
+NAME_METADATA = PropertyMetadata(NAME_KEY, "Personal · Preferred name", "text", "moderate")
 
 
 class FakeTokenVerifier:

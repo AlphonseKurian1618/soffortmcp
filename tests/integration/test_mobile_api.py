@@ -129,7 +129,7 @@ async def test_device_enrollment_pending_recovery_and_signed_decision(
             await store.create_approval(approval)
             fetched = await client.get(f"/v1/approvals/{approval.approval_id}")
             pending = await client.get("/v1/approvals")
-            assert fetched.json()["contract_version"] == 2
+            assert fetched.json()["contract_version"] == 3
             assert fetched.json()["disclosure_key"] is None
             assert [item["approval_id"] for item in pending.json()["requests"]] == [
                 approval.approval_id
@@ -142,6 +142,7 @@ async def test_device_enrollment_pending_recovery_and_signed_decision(
                 "approved_keys": [],
                 "denied_keys": [],
                 "unavailable_keys": [],
+                "property_metadata": [],
                 "compact_jwe": None,
             }
             result_hash = result_manifest_hash(
@@ -149,6 +150,7 @@ async def test_device_enrollment_pending_recovery_and_signed_decision(
                 approved_keys=(),
                 denied_keys=(),
                 unavailable_keys=(),
+                property_metadata=(),
                 compact_jwe=None,
             )
             signed = decision_message(

@@ -23,6 +23,7 @@ from soffortbackend.models import (
     Device,
     EnrollmentChallenge,
     Profile,
+    PropertyMetadata,
     StoreConflict,
     StoreUnavailable,
 )
@@ -107,6 +108,7 @@ class ApprovalStore(Protocol):
         approved_keys: tuple[str, ...],
         denied_keys: tuple[str, ...],
         unavailable_keys: tuple[str, ...],
+        property_metadata: tuple[PropertyMetadata, ...],
         compact_jwe: str | None,
         result_hash: str,
     ) -> Approval:
@@ -244,6 +246,7 @@ class InMemoryApprovalStore:
         approved_keys: tuple[str, ...],
         denied_keys: tuple[str, ...],
         unavailable_keys: tuple[str, ...],
+        property_metadata: tuple[PropertyMetadata, ...],
         compact_jwe: str | None,
         result_hash: str,
     ) -> Approval:
@@ -269,6 +272,7 @@ class InMemoryApprovalStore:
                 approved_keys=approved_keys,
                 denied_keys=denied_keys,
                 unavailable_keys=unavailable_keys,
+                property_metadata=property_metadata,
                 compact_jwe=compact_jwe,
                 result_hash=result_hash,
                 etag=str(version),
@@ -474,6 +478,7 @@ class CosmosApprovalStore:
         approved_keys: tuple[str, ...],
         denied_keys: tuple[str, ...],
         unavailable_keys: tuple[str, ...],
+        property_metadata: tuple[PropertyMetadata, ...],
         compact_jwe: str | None,
         result_hash: str,
     ) -> Approval:
@@ -494,6 +499,7 @@ class CosmosApprovalStore:
             approved_keys=approved_keys,
             denied_keys=denied_keys,
             unavailable_keys=unavailable_keys,
+            property_metadata=property_metadata,
             compact_jwe=compact_jwe,
             result_hash=result_hash,
             etag=None,
@@ -627,6 +633,7 @@ def _approval_document(approval: Approval) -> dict[str, Any]:
         "approved_keys": list(approval.approved_keys),
         "denied_keys": list(approval.denied_keys),
         "unavailable_keys": list(approval.unavailable_keys),
+        "property_metadata": [asdict(item) for item in approval.property_metadata],
         "compact_jwe": approval.compact_jwe,
         "result_hash": approval.result_hash,
         # Logical expiry is enforced in code; TTL only removes stale metadata.
@@ -657,6 +664,15 @@ def _approval_from_document(document: dict[str, Any]) -> Approval:
         approved_keys=tuple(str(value) for value in document.get("approved_keys", [])),
         denied_keys=tuple(str(value) for value in document.get("denied_keys", [])),
         unavailable_keys=tuple(str(value) for value in document.get("unavailable_keys", [])),
+        property_metadata=tuple(
+            PropertyMetadata(
+                key=str(item["key"]),
+                display_name=str(item["display_name"]),
+                value_type=str(item["value_type"]),
+                sensitivity=str(item["sensitivity"]),
+            )
+            for item in document.get("property_metadata", [])
+        ),
         compact_jwe=str(document["compact_jwe"]) if document.get("compact_jwe") else None,
         result_hash=str(document["result_hash"]) if document.get("result_hash") else None,
         etag=str(document.get("_etag")) if document.get("_etag") else None,
