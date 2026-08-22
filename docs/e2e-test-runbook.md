@@ -77,26 +77,25 @@ No removed or legacy tool is acceptable.
 
 1. Call `list_available_properties` with `{}`.
 2. Open the Permi request and approve.
-3. Require `status: approved` with metadata for the two populated fields.
+3. Require `status: approved` with metadata for every populated built-in and custom field.
 4. Confirm no `value` member and no fictional plaintext appears anywhere in the result.
 5. Repeat and deny. Require `{"status":"denied","properties":[]}`.
 
 ## 6. Selective disclosure test
 
-Call `request_properties` with:
+Copy exact opaque keys from the approved discovery result, preserving their order, then call `request_properties` with:
 
 ```json
 {
   "properties": [
-    "contact.personalEmail",
-    "identity.preferredName",
-    "vehicle.vin"
+    "vault.<email-handle-from-discovery>",
+    "vault.<preferred-name-handle-from-discovery>"
   ],
   "purpose": "Populate a fictional onboarding form"
 }
 ```
 
-On iPhone, verify the purpose is verbatim, the first two values are available, VIN is **Not stored**, and all toggles initially are off. Select only Personal email and approve.
+On iPhone, verify the purpose is verbatim and all toggles initially are off. Select only Personal email and approve. For the unavailable case, repeat with one syntactically valid `vault.` handle that is not present on the phone.
 
 Expected structured result:
 
@@ -105,14 +104,14 @@ Expected structured result:
   "status": "partially_approved",
   "properties": [
     {
-      "key": "contact.personalEmail",
-      "display_name": "Personal email",
+      "key": "vault.<email-handle-from-discovery>",
+      "display_name": "Personal · Email",
       "value_type": "email",
       "value": "ava.test@example.invalid"
     }
   ],
-  "denied_properties": ["identity.preferredName"],
-  "unavailable_properties": ["vehicle.vin"]
+  "denied_properties": ["vault.<preferred-name-handle-from-discovery>"],
+  "unavailable_properties": []
 }
 ```
 

@@ -6,7 +6,7 @@ from uuid import uuid7
 
 import httpx
 import pytest
-from conftest import OBJECT_ID, TENANT_ID
+from conftest import EMAIL_KEY, EMAIL_METADATA, OBJECT_ID, TENANT_ID
 from mcp.server.auth.provider import AccessToken
 
 from soffortbackend.app import create_app
@@ -64,10 +64,11 @@ class AutoApproveNotifier:
             device_id=devices[0].device_id,
             decision_id=str(uuid7()),
             decided_at=datetime.now(UTC),
-            available_keys=("contact.personalEmail",),
+            available_keys=(EMAIL_KEY,),
             approved_keys=(),
             denied_keys=(),
             unavailable_keys=(),
+            property_metadata=(EMAIL_METADATA,),
             compact_jwe=None,
             result_hash="fixture-result-hash",
         )
@@ -260,8 +261,8 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
         "status": "approved",
         "properties": [
             {
-                "key": "contact.personalEmail",
-                "display_name": "Personal email",
+                "key": EMAIL_KEY,
+                "display_name": "Personal · Email",
                 "value_type": "email",
                 "sensitivity": "moderate",
             }

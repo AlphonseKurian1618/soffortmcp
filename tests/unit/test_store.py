@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid7
 
 import pytest
+from conftest import EMAIL_KEY, EMAIL_METADATA
 
 from soffortbackend.models import (
     Approval,
@@ -204,10 +205,11 @@ async def test_cosmos_store_normal_lifecycle(
         device_id=device.device_id,
         decision_id=str(uuid7()),
         decided_at=datetime.now(UTC),
-        available_keys=("contact.personalEmail",),
+        available_keys=(EMAIL_KEY,),
         approved_keys=(),
         denied_keys=(),
         unavailable_keys=(),
+        property_metadata=(EMAIL_METADATA,),
         compact_jwe=None,
         result_hash="fixture-result-hash",
     )
@@ -272,6 +274,7 @@ async def test_in_memory_store_rejects_replayed_challenge_and_stale_approval() -
             approved_keys=(),
             denied_keys=(),
             unavailable_keys=(),
+            property_metadata=(),
             compact_jwe=None,
             result_hash="fixture-result-hash",
         )

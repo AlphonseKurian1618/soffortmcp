@@ -2,8 +2,8 @@
 
 `soffortbackend` is the authenticated MCP resource server for the Permi iPhone vault. It is served at `https://soffort.com/mcp` and exposes exactly two tools:
 
-- `list_available_properties()` asks the phone to disclose value-free metadata for populated, non-expired catalog fields.
-- `request_properties(properties, purpose)` asks the phone to selectively release catalog values for the stated purpose.
+- `list_available_properties()` asks the phone to disclose value-free metadata for every populated vault field.
+- `request_properties(properties, purpose)` asks the phone to selectively release fields identified by the opaque handles returned from discovery.
 
 Every call requires a Microsoft Entra External ID access token and a fresh, signed iPhone decision. Entra federates Apple and email OTP authentication; Apple tokens, email codes, and passwords never reach this service. Approved values remain encrypted from the phone to an Azure Key Vault RSA key and are decrypted only in pod memory.
 
@@ -17,7 +17,7 @@ Every call requires a Microsoft Entra External ID access token and a fresh, sign
 | `/v1/devices/*`, `/v1/approvals*` | `soffortbackend.mobile` | Device enrollment, inbox recovery, signed decisions |
 | `GET /livez`, `GET /readyz` | Cluster only | Kubernetes probes |
 
-The catalog is closed to 13 reviewed fields; unknown and duplicate keys fail before APNs delivery. Denied and unavailable values are structured business outcomes. Notification failure, timeout, bad signatures, and invalid ciphertext are value-free MCP errors. See [the mobile protocol](docs/mobile-approval-api.md).
+The server has no copy of the user's ontology or values. The iPhone derives a stable, opaque handle for every populated built-in, composed, repeated, or custom field and authenticates its value-free metadata in the signed decision. Malformed and duplicate handles fail before APNs delivery. Denied and unavailable values are structured business outcomes. Notification failure, timeout, bad signatures, and invalid ciphertext are value-free MCP errors. See [the mobile protocol](docs/mobile-approval-api.md).
 
 ## Local validation
 

@@ -8,18 +8,25 @@ import hashlib
 import json
 import secrets
 import time
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from uuid import uuid7
 
-from soffortbackend.catalog import PropertyKey
+from soffortbackend.catalog import MAX_AVAILABLE_PROPERTIES, PROPERTY_KEY_PATTERN
 from soffortbackend.device_security import decision_message, verify_signature
 from soffortbackend.disclosure import (
     DisclosedProperty,
     DisclosureDecryptor,
     result_manifest_hash,
 )
-from soffortbackend.models import Approval, ApprovalStatus, Principal, StoreConflict
+from soffortbackend.models import (
+    Approval,
+    ApprovalStatus,
+    Principal,
+    PropertyMetadata,
+    StoreConflict,
+)
 from soffortbackend.notifications import ApprovalNotifier, NotificationUnavailable
 from soffortbackend.settings import Settings
 from soffortbackend.store import ApprovalStore
@@ -64,7 +71,7 @@ class ApprovalService:
         self.disclosure = disclosure
 
     async def request_available_properties(self, principal: Principal) -> Approval:
-        """Ask the phone to disclose only its populated catalog manifest."""
+        """Ask the phone to disclose its populated value-free field manifest."""
         return await self._request(
             principal,
             tool_name=LIST_TOOL,
@@ -76,11 +83,11 @@ class ApprovalService:
     async def request_properties(
         self,
         principal: Principal,
-        requested_keys: tuple[PropertyKey, ...],
+        requested_keys: tuple[str, ...],
         purpose: str,
     ) -> tuple[Approval, tuple[DisclosedProperty, ...]]:
         """Ask for selected local values and decrypt only an approved JWE."""
-        raw_keys = tuple(key.value for key in requested_keys)
+        raw_keys = requested_keys
         approval = await self._request(
             principal,
             tool_name=REQUEST_TOOL,
@@ -162,6 +169,7 @@ class ApprovalService:
         approved_keys: tuple[str, ...],
         denied_keys: tuple[str, ...],
         unavailable_keys: tuple[str, ...],
+        property_metadata: tuple[PropertyMetadata, ...],
         compact_jwe: str | None,
         result_hash: str,
         issued_at: int,
@@ -192,6 +200,7 @@ class ApprovalService:
             approved_keys=approved_keys,
             denied_keys=denied_keys,
             unavailable_keys=unavailable_keys,
+            property_metadata=property_metadata,
             compact_jwe=compact_jwe,
         )
         expected_hash = result_manifest_hash(
@@ -199,6 +208,7 @@ class ApprovalService:
             approved_keys=approved_keys,
             denied_keys=denied_keys,
             unavailable_keys=unavailable_keys,
+            property_metadata=property_metadata,
             compact_jwe=compact_jwe,
         )
         if result_hash != expected_hash:
@@ -226,6 +236,7 @@ class ApprovalService:
             approved_keys=approved_keys,
             denied_keys=denied_keys,
             unavailable_keys=unavailable_keys,
+            property_metadata=property_metadata,
             compact_jwe=compact_jwe,
             result_hash=result_hash,
         )
@@ -239,21 +250,28 @@ class ApprovalService:
         approved_keys: tuple[str, ...],
         denied_keys: tuple[str, ...],
         unavailable_keys: tuple[str, ...],
+        property_metadata: tuple[PropertyMetadata, ...],
         compact_jwe: str | None,
     ) -> None:
         all_lists = (available_keys, approved_keys, denied_keys, unavailable_keys)
         if any(len(values) != len(set(values)) for values in all_lists):
             raise ValueError("consent result contains duplicate property keys")
-        catalog = {item.value for item in PropertyKey}
-        if any(key not in catalog for values in all_lists for key in values):
-            raise ValueError("consent result contains an unknown property key")
+        if any(
+            PROPERTY_KEY_PATTERN.fullmatch(key) is None for values in all_lists for key in values
+        ):
+            raise ValueError("consent result contains an invalid property key")
+        self._validate_metadata(property_metadata)
         if decision == "denied":
-            if any(all_lists) or compact_jwe is not None:
+            if any(all_lists) or property_metadata or compact_jwe is not None:
                 raise ValueError("denial cannot include property metadata or ciphertext")
             return
         if approval.tool_name == LIST_TOOL:
             if approved_keys or denied_keys or unavailable_keys or compact_jwe is not None:
                 raise ValueError("availability response has an invalid shape")
+            if len(available_keys) > MAX_AVAILABLE_PROPERTIES:
+                raise ValueError("availability response contains too many properties")
+            if tuple(item.key for item in property_metadata) != available_keys:
+                raise ValueError("availability metadata must match property order")
             return
         requested = approval.requested_keys
         combined = approved_keys + denied_keys + unavailable_keys
@@ -261,8 +279,50 @@ class ApprovalService:
             raise ValueError("request result must partition every requested property")
         if tuple(key for key in requested if key in set(approved_keys)) != approved_keys:
             raise ValueError("approved properties must preserve request order")
+        locally_available = tuple(key for key in requested if key not in set(unavailable_keys))
+        if tuple(item.key for item in property_metadata) != locally_available:
+            raise ValueError("request metadata must match locally available property order")
         if bool(approved_keys) != bool(compact_jwe):
             raise ValueError("approved properties require exactly one encrypted disclosure")
+
+    @staticmethod
+    def _validate_metadata(metadata: tuple[PropertyMetadata, ...]) -> None:
+        """Validate bounded phone-authored labels without accepting values."""
+        allowed_types = {
+            "text",
+            "long_text",
+            "identifier",
+            "email",
+            "phone",
+            "url",
+            "date",
+            "date_time",
+            "integer",
+            "decimal",
+            "boolean",
+            "choice",
+            "country_region",
+            "money",
+            "measurement",
+        }
+        allowed_sensitivity = {"low", "moderate", "sensitive", "highly_sensitive"}
+        if len({item.key for item in metadata}) != len(metadata):
+            raise ValueError("property metadata contains duplicate keys")
+        for item in metadata:
+            display_name = unicodedata.normalize("NFC", item.display_name.strip())
+            if (
+                PROPERTY_KEY_PATTERN.fullmatch(item.key) is None
+                # Item titles (120) and custom field labels (80) are both
+                # locally bounded; allow their separator without truncation.
+                or not 1 <= len(display_name) <= 240
+                or display_name != item.display_name
+                or any(
+                    unicodedata.category(character).startswith("C") for character in display_name
+                )
+                or item.value_type not in allowed_types
+                or item.sensitivity not in allowed_sensitivity
+            ):
+                raise ValueError("property metadata is invalid")
 
     async def _wait_for_decision(self, approval: Approval) -> Approval:
         deadline = time.monotonic() + self.settings.approval_timeout_seconds

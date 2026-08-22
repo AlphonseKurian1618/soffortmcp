@@ -15,7 +15,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from soffortbackend.approval import REQUEST_TOOL, ApprovalService
-from soffortbackend.catalog import PROPERTY_BY_KEY, PropertyKey
+from soffortbackend.catalog import MAX_AVAILABLE_PROPERTIES
 from soffortbackend.device_security import (
     canonical_uuid7,
     enrollment_message,
@@ -25,11 +25,18 @@ from soffortbackend.device_security import (
     validate_apns_token,
     verify_signature,
 )
-from soffortbackend.models import Approval, Device, EnrollmentChallenge, Principal, StoreConflict
+from soffortbackend.models import (
+    Approval,
+    Device,
+    EnrollmentChallenge,
+    Principal,
+    PropertyMetadata,
+    StoreConflict,
+)
 from soffortbackend.settings import Settings
 from soffortbackend.store import ApprovalStore
 
-MOBILE_BODY_LIMIT_BYTES = 64 * 1024
+MOBILE_BODY_LIMIT_BYTES = 1024 * 1024
 
 
 class MobileHttpError(Exception):
@@ -204,6 +211,7 @@ def register_mobile_routes(
                     "approved_keys",
                     "denied_keys",
                     "unavailable_keys",
+                    "property_metadata",
                     "compact_jwe",
                 },
             )
@@ -226,6 +234,7 @@ def register_mobile_routes(
                 approved_keys=_string_tuple(result_object["approved_keys"]),
                 denied_keys=_string_tuple(result_object["denied_keys"]),
                 unavailable_keys=_string_tuple(result_object["unavailable_keys"]),
+                property_metadata=_metadata_tuple(result_object["property_metadata"]),
                 compact_jwe=compact_jwe,
                 result_hash=result_hash,
                 issued_at=issued_at,
@@ -318,11 +327,36 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise ValueError("property manifest must be a bounded array")
     values = cast(list[object], value)
-    if len(values) > len(list(PropertyKey)):
+    if len(values) > MAX_AVAILABLE_PROPERTIES:
         raise ValueError("property manifest must be a bounded array")
     if not all(isinstance(item, str) for item in values):
         raise ValueError("property manifest members must be strings")
     return tuple(cast(list[str], values))
+
+
+def _metadata_tuple(value: object) -> tuple[PropertyMetadata, ...]:
+    if not isinstance(value, list):
+        raise ValueError("property metadata must be a bounded array")
+    values = cast(list[object], value)
+    if len(values) > MAX_AVAILABLE_PROPERTIES:
+        raise ValueError("property metadata must be a bounded array")
+    output: list[PropertyMetadata] = []
+    for raw in values:
+        if not isinstance(raw, dict):
+            raise ValueError("property metadata members must be objects")
+        item = cast(dict[str, object], raw)
+        _require_exact_members(item, {"key", "display_name", "value_type", "sensitivity"})
+        if not all(isinstance(item[name], str) for name in item):
+            raise ValueError("property metadata members must be strings")
+        output.append(
+            PropertyMetadata(
+                key=cast(str, item["key"]),
+                display_name=cast(str, item["display_name"]),
+                value_type=cast(str, item["value_type"]),
+                sensitivity=cast(str, item["sensitivity"]),
+            )
+        )
+    return tuple(output)
 
 
 async def _approval_response(
@@ -331,21 +365,21 @@ async def _approval_response(
 ) -> dict[str, Any]:
     requested = []
     for raw_key in approval.requested_keys:
-        key = PropertyKey(raw_key)
-        definition = PROPERTY_BY_KEY[key]
         requested.append(
             {
-                "key": key.value,
-                "display_name": definition.display_name,
-                "value_type": definition.value_type,
-                "sensitivity": definition.sensitivity,
+                "key": raw_key,
+                # The iPhone resolves opaque handles against its encrypted
+                # vault and never trusts these bounded transport placeholders.
+                "display_name": "Vault property",
+                "value_type": "dynamic",
+                "sensitivity": "unknown",
             }
         )
     disclosure_key = None
     if approval.tool_name == REQUEST_TOOL:
         disclosure_key = (await approvals.disclosure.current_key()).as_json()
     return {
-        "contract_version": 2,
+        "contract_version": 3,
         "approval_id": approval.approval_id,
         "tool_name": approval.tool_name,
         "requester": approval.requester,

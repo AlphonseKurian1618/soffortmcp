@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from uuid import uuid7
 
 import pytest
+from conftest import EMAIL_KEY, EMAIL_METADATA
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import soffortbackend.disclosure as module
@@ -41,12 +42,13 @@ def _approval() -> Approval:
         arguments_hash="arguments-hash",
         requester="VS Code",
         purpose="Send a fictional receipt",
-        requested_keys=("contact.personalEmail",),
+        requested_keys=(EMAIL_KEY,),
         created_at=now - timedelta(seconds=1),
         expires_at=now + timedelta(minutes=1),
         status=ApprovalStatus.APPROVED,
         decision_id=str(uuid7()),
-        approved_keys=("contact.personalEmail",),
+        approved_keys=(EMAIL_KEY,),
+        property_metadata=(EMAIL_METADATA,),
     )
 
 
@@ -70,7 +72,7 @@ def _compact(approval: Approval, *, cek: bytes, overrides=None, payload_override
         "decision_id": approval.decision_id,
         "approved_fields": [
             {
-                "key": "contact.personalEmail",
+                "key": EMAIL_KEY,
                 "value_type": "email",
                 "value": "fictional@example.test",
             }
@@ -148,9 +150,7 @@ async def test_valid_jwe_decrypts_and_preserves_catalog_order(
     assert decryptor.ready
     assert (await decryptor.current_key()).as_json()["kid"] == "key-version"
     values = await decryptor.decrypt(approval)
-    assert [(item.key.value, item.value) for item in values] == [
-        ("contact.personalEmail", "fictional@example.test")
-    ]
+    assert [(item.key, item.value) for item in values] == [(EMAIL_KEY, "fictional@example.test")]
     await decryptor.close()
     assert not decryptor.ready
     with pytest.raises(DisclosureError, match="unavailable"):
@@ -185,19 +185,11 @@ async def test_jwe_header_tampering_fails_closed(monkeypatch, overrides, match) 
         ({"approved_fields": []}, "count"),
         ({"approved_fields": "bad"}, "array"),
         (
-            {
-                "approved_fields": [
-                    {"key": "contact.personalEmail", "value_type": "text", "value": "x"}
-                ]
-            },
+            {"approved_fields": [{"key": EMAIL_KEY, "value_type": "text", "value": "x"}]},
             "metadata",
         ),
         (
-            {
-                "approved_fields": [
-                    {"key": "contact.personalEmail", "value_type": "email", "value": ""}
-                ]
-            },
+            {"approved_fields": [{"key": EMAIL_KEY, "value_type": "email", "value": ""}]},
             "invalid size",
         ),
     ],
@@ -239,12 +231,14 @@ def test_hashes_and_strict_json_are_deterministic() -> None:
         approved_keys=("a",),
         denied_keys=(),
         unavailable_keys=(),
+        property_metadata=(EMAIL_METADATA,),
         compact_jwe="one",
     ) != result_manifest_hash(
         available_keys=(),
         approved_keys=("a",),
         denied_keys=(),
         unavailable_keys=(),
+        property_metadata=(EMAIL_METADATA,),
         compact_jwe="two",
     )
     with pytest.raises(DisclosureError, match="duplicate"):

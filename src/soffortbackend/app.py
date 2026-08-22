@@ -21,7 +21,7 @@ from starlette.types import Receive, Scope, Send
 
 from soffortbackend.approval import ApprovalError, ApprovalService
 from soffortbackend.auth import EntraTokenVerifier
-from soffortbackend.catalog import PropertyKey
+from soffortbackend.catalog import parse_property_keys
 from soffortbackend.device_security import normalize_purpose
 from soffortbackend.disclosure import (
     DisclosureDecryptor,
@@ -146,7 +146,7 @@ def create_app(
     async def list_available_properties() -> Annotated[
         CallToolResult, ListAvailablePropertiesOutput
     ]:
-        """Ask the iPhone before revealing which catalog properties are populated."""
+        """Ask the iPhone before revealing which vault fields are populated."""
         try:
             approval = await approvals.request_available_properties(vscode_principal())
         except ApprovalError as error:
@@ -163,18 +163,15 @@ def create_app(
     )(list_available_properties)
 
     async def request_properties(
-        properties: list[PropertyKey],
+        properties: list[str],
         purpose: str,
     ) -> Annotated[CallToolResult, RequestPropertiesOutput]:
         """Request an explicitly selected subset of local vault values."""
-        if not 1 <= len(properties) <= len(list(PropertyKey)):
-            raise ValueError("properties must contain 1 to 13 catalog keys")
-        if len(set(properties)) != len(properties):
-            raise ValueError("properties cannot contain duplicates")
+        requested = parse_property_keys(properties)
         normalized_purpose = normalize_purpose(purpose)
         try:
             approval, values = await approvals.request_properties(
-                vscode_principal(), tuple(properties), normalized_purpose
+                vscode_principal(), requested, normalized_purpose
             )
         except ApprovalError as error:
             approval_error(error.code.value)

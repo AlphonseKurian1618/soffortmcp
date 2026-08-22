@@ -15,8 +15,7 @@ from azure.keyvault.keys.crypto import EncryptionAlgorithm
 from azure.keyvault.keys.crypto.aio import CryptographyClient
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from soffortbackend.catalog import PROPERTY_BY_KEY, PropertyKey
-from soffortbackend.models import Approval
+from soffortbackend.models import Approval, PropertyMetadata
 from soffortbackend.settings import Settings
 
 
@@ -48,7 +47,7 @@ class DisclosureKey:
 class DisclosedProperty:
     """One approved plaintext value held only during the MCP response."""
 
-    key: PropertyKey
+    key: str
     value: str
 
 
@@ -234,6 +233,7 @@ def result_manifest_hash(
     approved_keys: tuple[str, ...],
     denied_keys: tuple[str, ...],
     unavailable_keys: tuple[str, ...],
+    property_metadata: tuple[PropertyMetadata, ...],
     compact_jwe: str | None,
 ) -> str:
     """Bind the signed decision to exact metadata and ciphertext bytes."""
@@ -242,6 +242,24 @@ def result_manifest_hash(
         "available_keys": list(available_keys),
         "compact_jwe_sha256": _encode(hashlib.sha256((compact_jwe or "").encode()).digest()),
         "denied_keys": list(denied_keys),
+        "property_metadata_sha256": _encode(
+            hashlib.sha256(
+                json.dumps(
+                    [
+                        {
+                            "key": item.key,
+                            "display_name": item.display_name,
+                            "value_type": item.value_type,
+                            "sensitivity": item.sensitivity,
+                        }
+                        for item in property_metadata
+                    ],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode()
+            ).digest()
+        ),
         "unavailable_keys": list(unavailable_keys),
     }
     encoded = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode()
@@ -282,21 +300,21 @@ def _validate_plaintext(
     if len(fields) != len(approval.approved_keys):
         raise DisclosureError("disclosure field count does not match")
     output: list[DisclosedProperty] = []
+    metadata_by_key = {item.key: item for item in approval.property_metadata}
     for expected, raw in zip(approval.approved_keys, fields, strict=True):
         if not isinstance(raw, dict):
             raise DisclosureError("disclosure field is malformed")
         field = cast(dict[str, Any], raw)
         _require_exact(field, {"key", "value_type", "value"})
-        try:
-            key = PropertyKey(expected)
-        except ValueError as error:
-            raise DisclosureError("approved property is outside the catalog") from error
+        metadata = metadata_by_key.get(expected)
+        if metadata is None:
+            raise DisclosureError("approved property metadata is missing")
         value = field["value"]
-        if field["key"] != expected or field["value_type"] != PROPERTY_BY_KEY[key].value_type:
+        if field["key"] != expected or field["value_type"] != metadata.value_type:
             raise DisclosureError("disclosure property metadata does not match")
         if not isinstance(value, str) or not 1 <= len(value) <= 4_096:
             raise DisclosureError("disclosure value has an invalid size")
-        output.append(DisclosedProperty(key, value))
+        output.append(DisclosedProperty(expected, value))
     return tuple(output)
 
 

@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid7
 
 import pytest
+from conftest import EMAIL_KEY, EMAIL_METADATA, NAME_KEY, NAME_METADATA
 
-from soffortbackend.catalog import PropertyKey
 from soffortbackend.disclosure import DisclosedProperty
 from soffortbackend.models import Approval, ApprovalStatus
 from soffortbackend.tools import ApprovalToolError, approval_error, list_result, request_result
@@ -22,7 +22,7 @@ def _approval(**changes) -> Approval:
         "arguments_hash": "hash",
         "requester": "VS Code",
         "purpose": "Book a trip",
-        "requested_keys": ("identity.preferredName", "contact.personalEmail"),
+        "requested_keys": (NAME_KEY, EMAIL_KEY),
         "created_at": now,
         "expires_at": now + timedelta(minutes=2),
     }
@@ -35,15 +35,16 @@ def test_discovery_returns_metadata_without_values() -> None:
         tool_name="list_available_properties",
         requested_keys=(),
         status=ApprovalStatus.APPROVED,
-        available_keys=("contact.personalEmail",),
+        available_keys=(EMAIL_KEY,),
+        property_metadata=(EMAIL_METADATA,),
     )
     result = list_result(approval)
     assert result.structured_content == {
         "status": "approved",
         "properties": [
             {
-                "key": "contact.personalEmail",
-                "display_name": "Personal email",
+                "key": EMAIL_KEY,
+                "display_name": "Personal · Email",
                 "value_type": "email",
                 "sensitivity": "moderate",
             }
@@ -55,25 +56,26 @@ def test_discovery_returns_metadata_without_values() -> None:
 def test_selective_request_returns_values_only_in_structured_content() -> None:
     approval = _approval(
         status=ApprovalStatus.APPROVED,
-        approved_keys=("identity.preferredName",),
-        denied_keys=("contact.personalEmail",),
+        approved_keys=(NAME_KEY,),
+        denied_keys=(EMAIL_KEY,),
+        property_metadata=(NAME_METADATA, EMAIL_METADATA),
     )
     result = request_result(
         approval,
-        (DisclosedProperty(PropertyKey.IDENTITY_PREFERRED_NAME, "Fictional Maya"),),
+        (DisclosedProperty(NAME_KEY, "Fictional Maya"),),
     )
     assert result.structured_content == {
         "status": "partially_approved",
         "properties": [
             {
-                "key": "identity.preferredName",
-                "display_name": "Preferred name",
+                "key": NAME_KEY,
+                "display_name": "Personal · Preferred name",
                 "value_type": "text",
                 "sensitivity": "moderate",
                 "value": "Fictional Maya",
             }
         ],
-        "denied_properties": ["contact.personalEmail"],
+        "denied_properties": [EMAIL_KEY],
         "unavailable_properties": [],
     }
     assert "Fictional Maya" not in result.content[0].text
@@ -84,7 +86,7 @@ def test_denial_and_unavailable_are_structured_outcomes() -> None:
     unavailable = request_result(
         _approval(
             status=ApprovalStatus.APPROVED,
-            unavailable_keys=("identity.preferredName", "contact.personalEmail"),
+            unavailable_keys=(NAME_KEY, EMAIL_KEY),
         ),
         (),
     )
@@ -95,11 +97,12 @@ def test_denial_and_unavailable_are_structured_outcomes() -> None:
 def test_fully_approved_request_has_approved_status() -> None:
     approval = _approval(
         status=ApprovalStatus.APPROVED,
-        approved_keys=("identity.preferredName", "contact.personalEmail"),
+        approved_keys=(NAME_KEY, EMAIL_KEY),
+        property_metadata=(NAME_METADATA, EMAIL_METADATA),
     )
     values = (
-        DisclosedProperty(PropertyKey.IDENTITY_PREFERRED_NAME, "Fictional Maya"),
-        DisclosedProperty(PropertyKey.CONTACT_PERSONAL_EMAIL, "maya@example.invalid"),
+        DisclosedProperty(NAME_KEY, "Fictional Maya"),
+        DisclosedProperty(EMAIL_KEY, "maya@example.invalid"),
     )
     result = request_result(approval, values)
     assert result.structured_content["status"] == "approved"

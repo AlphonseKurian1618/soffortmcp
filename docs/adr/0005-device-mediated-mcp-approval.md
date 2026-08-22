@@ -10,6 +10,8 @@ The MCP server exposes only `list_available_properties` and `request_properties`
 
 Vault values never synchronize to the service. Approved values are compact `RSA-OAEP-256`/`A256GCM` JWE addressed to a non-exportable 2048-bit Key Vault RSA key. Pods unwrap through workload identity and decrypt AES-GCM only in memory. Old key versions remain enabled for requests already issued with their `kid`.
 
+The iPhone projects every populated ontology field—including custom fields and repeated composed instances—to a stable opaque digest handle. Phone-authored display name, value type, and sensitivity are part of the signed result manifest. The server therefore needs no persistent copy of the vault schema, and local record/component identifiers do not cross the boundary.
+
 Accounts are identified only by verified `tid` and `oid`. Apple and email records are not guessed or merged using email addresses.
 
 ## Consequences
