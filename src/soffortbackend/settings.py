@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-CANONICAL_MCP_URL = "https://soffort.com/mcp"
+CANONICAL_MCP_URL = "https://concentrey.com/mcp"
 DEFAULT_SCOPE_URI = f"{CANONICAL_MCP_URL}/soffortbackend.access"
 DEFAULT_MOBILE_SCOPE_URI = f"{CANONICAL_MCP_URL}/soffortbackend.mobile"
 
@@ -52,11 +52,11 @@ class Settings(BaseSettings):
     apns_private_key_secret_version: str | None = None
     apns_key_id: str | None = Field(default=None, pattern=r"^[A-Z0-9]{10}$")
     apns_team_id: str = Field(default="TTP26ZNL9Q", pattern=r"^[A-Z0-9]{10}$")
-    apns_topic: str = Field(default="com.soffort.aivault", min_length=1, max_length=255)
+    apns_topic: str = Field(default="com.concentrey.app", min_length=1, max_length=255)
     apns_environment: Literal["sandbox", "production"] = "sandbox"
     approval_timeout_seconds: int = Field(default=120, ge=5, le=300)
     approval_poll_interval_seconds: float = Field(default=0.5, ge=0.05, le=5.0)
-    allowed_hosts_csv: str = "soffort.com"
+    allowed_hosts_csv: str = "concentrey.com"
     allowed_origins_csv: str = "https://vscode.dev"
     bind_host: str = "0.0.0.0"  # noqa: S104 - the container must accept Service traffic.
     port: int = Field(default=8000, ge=1, le=65535)

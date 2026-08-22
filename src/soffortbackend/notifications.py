@@ -182,8 +182,8 @@ class APNsApprovalNotifier:
         payload = {
             "aps": {
                 "alert": {
-                    "title": "Permi request",
-                    "body": "Open Permi to review which information was requested.",
+                    "title": "Concentrey request",
+                    "body": "Open Concentrey to review which information was requested.",
                 },
                 "sound": "default",
             },

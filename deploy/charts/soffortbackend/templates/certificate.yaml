@@ -1,7 +1,7 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: soffort-com
+  name: concentrey-com
   labels:
     {{- include "soffortbackend.labels" . | nindent 4 }}
 spec:
@@ -13,4 +13,3 @@ spec:
     kind: ClusterIssuer
   dnsNames:
     - {{ .Values.gateway.hostname }}
-

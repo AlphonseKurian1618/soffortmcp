@@ -1,4 +1,4 @@
-# Permi vault consent protocol
+# Concentrey vault consent protocol
 
 The VS Code token authenticates the MCP caller; it never substitutes for the iPhone owner's decision. Apple and email identities remain distinct unless External ID itself returns the same verified `tid` and `oid`.
 

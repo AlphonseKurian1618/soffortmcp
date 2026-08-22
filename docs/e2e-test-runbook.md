@@ -1,4 +1,4 @@
-# Permi vault end-to-end runbook
+# Concentrey vault end-to-end runbook
 
 This runbook proves Entra authentication, MCP authorization, physical-iPhone consent, selective disclosure, and the absence of server-side vault storage. Use fictional values only.
 
@@ -6,7 +6,7 @@ This runbook proves Entra authentication, MCP authorization, physical-iPhone con
 
 - Subscription: `86dfb8ca-2e38-4abb-9072-e8d077af295a`
 - Resource group / cluster: `rg-soffortbackend-dev-wus2` / `aks-soffortbackend-dev-wus2`
-- MCP endpoint: `https://soffort.com/mcp`
+- MCP endpoint: `https://concentrey.com/mcp`
 - External tenant: `85685fcd-3fc0-4032-982c-92ddd6efc37b`
 - VS Code public client: `9cea70e5-8b4c-4f37-bf6f-2d789ae49492`
 - iOS public client: `dcae2fbc-315f-41b0-9c47-17482098cbab`
@@ -40,18 +40,20 @@ Expected: two Ready app pods, Ready HelmRelease, and an `acr.../soffortbackend@s
 ## 2. Verify public boundary
 
 ```bash
-dig +short soffort.com A
-curl --fail --silent https://soffort.com/.well-known/oauth-protected-resource/mcp
-curl --include --request POST https://soffort.com/mcp \
+dig +short concentrey.com A
+curl --fail --silent https://concentrey.com/.well-known/oauth-protected-resource/mcp
+curl --include --request POST https://concentrey.com/mcp \
   --header 'content-type: application/json' --data '{}'
-curl --include https://soffort.com/livez
+curl --include https://concentrey.com/livez
 ```
 
-Expected: apex resolves to `4.242.124.73`; metadata resource is exactly `https://soffort.com/mcp`; unauthenticated MCP returns 401 with the RFC 9728 metadata challenge; health is not publicly routed. Inspect the certificate in a browser and require a trusted, unexpired chain.
+Expected: apex resolves to `4.242.124.73`; metadata resource is exactly `https://concentrey.com/mcp`; unauthenticated MCP returns 401 with the RFC 9728 metadata challenge; health is not publicly routed. Inspect the certificate in a browser and require a trusted, unexpired chain.
 
 ## 3. Update and prepare the iPhone
 
-1. Open `/Users/alphonsekurian/Code/Vault2/Permi.xcodeproj` and run the `SoffortApproval` scheme on the already enrolled physical iPhone. The installed app appears as **Permi** and retains the existing Entra session/device key.
+1. Open `/Users/alphonsekurian/Code/VaultBackend2/AIVaultApp/Concentrey.xcodeproj` and run the
+   `Concentrey` scheme on the registered physical iPhone. Because `com.concentrey.app` is a new app
+   identity, authenticate and enroll this installation as a new device.
 2. Sign in using the same External ID method/account used by VS Code. Test Apple first; repeat the authentication gate with email OTP separately.
 3. Allow notifications and confirm Settings says **This iPhone is linked**.
 4. In **Vault**, add fictional values:
