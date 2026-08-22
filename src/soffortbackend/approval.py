@@ -75,7 +75,7 @@ class ApprovalService:
         return await self._request(
             principal,
             tool_name=LIST_TOOL,
-            purpose="List the properties currently available in this Permi vault.",
+            purpose="List the properties currently available in this Concentrey vault.",
             requested_keys=(),
             arguments={},
         )

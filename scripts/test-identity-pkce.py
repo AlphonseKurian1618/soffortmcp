@@ -28,8 +28,8 @@ DEFAULT_TENANT_ID = "85685fcd-3fc0-4032-982c-92ddd6efc37b"
 DEFAULT_TENANT_DOMAIN = "soffortcustomers.onmicrosoft.com"
 DEFAULT_CLIENT_ID = "9cea70e5-8b4c-4f37-bf6f-2d789ae49492"
 DEFAULT_AUDIENCE = "387b7862-7ab6-4139-af73-b54f535ded29"
-DEFAULT_RESOURCE = "https://soffort.com/mcp"
-DEFAULT_SCOPE = "https://soffort.com/mcp/soffortbackend.access"
+DEFAULT_RESOURCE = "https://concentrey.com/mcp"
+DEFAULT_SCOPE = "https://concentrey.com/mcp/soffortbackend.access"
 DEFAULT_REDIRECT_URI = "http://127.0.0.1:33418"
 
 
@@ -119,11 +119,11 @@ def receive_callback(redirect_uri: str, expected_state: str, timeout_seconds: in
             result["error"] = query.get("error", [""])[0]
             result["error_description"] = query.get("error_description", [""])[0]
             body = (
-                b"<!doctype html><title>soffortbackend identity test</title>"
+                b"<!doctype html><title>Concentrey identity test</title>"
                 # Remove the already-consumed code from the visible address bar
                 # before an operator takes a screenshot or copies the URL.
                 b"<script>history.replaceState(null,'','/complete')</script>"
-                b"<h1>Sign-in returned to soffortbackend.</h1>"
+                b"<h1>Sign-in returned to Concentrey.</h1>"
                 b"<p>You can return to Codex. This tab does not display any token or code.</p>"
             )
             self.send_response(200)

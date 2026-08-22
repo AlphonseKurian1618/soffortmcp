@@ -50,7 +50,7 @@ async def main_async() -> int:
                 started = time.perf_counter()
                 try:
                     response = await client.post(
-                        "https://soffort.com/mcp",
+                        "https://concentrey.com/mcp",
                         headers=headers,
                         json=payload,
                     )

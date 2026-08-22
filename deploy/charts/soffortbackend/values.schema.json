@@ -27,9 +27,9 @@
         "vscodeClientId": { "type": "string", "minLength": 1 },
         "iosClientId": { "type": "string", "minLength": 1 },
         "scopeValue": { "type": "string", "const": "soffortbackend.access" },
-        "scopeUri": { "type": "string", "const": "https://soffort.com/mcp/soffortbackend.access" },
+        "scopeUri": { "type": "string", "const": "https://concentrey.com/mcp/soffortbackend.access" },
         "mobileScopeValue": { "type": "string", "const": "soffortbackend.mobile" },
-        "mobileScopeUri": { "type": "string", "const": "https://soffort.com/mcp/soffortbackend.mobile" }
+        "mobileScopeUri": { "type": "string", "const": "https://concentrey.com/mcp/soffortbackend.mobile" }
       }
     },
     "approval": {
@@ -47,7 +47,7 @@
         "apnsSecretVersion": { "type": "string", "minLength": 1 },
         "apnsKeyId": { "type": "string", "pattern": "^[A-Z0-9]{10}$" },
         "apnsTeamId": { "type": "string", "const": "TTP26ZNL9Q" },
-        "apnsTopic": { "type": "string", "const": "com.soffort.aivault" },
+        "apnsTopic": { "type": "string", "const": "com.concentrey.app" },
         "apnsEnvironment": { "type": "string", "const": "sandbox" }
       }
     },
@@ -76,7 +76,7 @@
       "additionalProperties": false,
       "required": ["hostname", "className", "tlsSecretName", "httpListenerPort", "httpsListenerPort"],
       "properties": {
-        "hostname": { "type": "string", "const": "soffort.com" },
+        "hostname": { "type": "string", "const": "concentrey.com" },
         "className": { "type": "string", "const": "traefik" },
         "tlsSecretName": { "type": "string", "minLength": 1 },
         "httpListenerPort": { "type": "integer", "const": 8000 },

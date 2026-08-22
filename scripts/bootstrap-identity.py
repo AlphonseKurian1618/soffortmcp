@@ -16,18 +16,21 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 GRAPH = "https://graph.microsoft.com/v1.0"
-API_NAME = "soffortbackend-api"
-CLIENT_NAME = "soffortbackend-vscode"
-IOS_CLIENT_NAME = "soffortbackend-ios"
+API_NAME = "concentrey-api"
+CLIENT_NAME = "concentrey-vscode"
+IOS_CLIENT_NAME = "concentrey-ios"
+LEGACY_API_NAME = "soffortbackend-api"
+LEGACY_CLIENT_NAME = "soffortbackend-vscode"
+LEGACY_IOS_CLIENT_NAME = "soffortbackend-ios"
 SCOPE_VALUE = "soffortbackend.access"
 MOBILE_SCOPE_VALUE = "soffortbackend.mobile"
-RESOURCE_URI = "https://soffort.com/mcp"
+RESOURCE_URI = "https://concentrey.com/mcp"
 REDIRECTS = ["http://127.0.0.1:33418", "https://vscode.dev/redirect"]
-IOS_REDIRECTS = ["msauth.com.soffort.aivault://auth"]
+IOS_REDIRECTS = ["msauth.com.concentrey.app://auth"]
 
 
 class GraphClient:
@@ -79,14 +82,22 @@ def azure_access_token(tenant_id: str) -> str:
     return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603
 
 
-def find_application(graph: GraphClient, display_name: str) -> dict[str, Any] | None:
-    """Find exactly one application registration by its stable display name."""
-    escaped = display_name.replace("'", "''")
-    query = urllib.parse.urlencode({"$filter": f"displayName eq '{escaped}'"})
-    result = graph.request("GET", f"/applications?{query}")
-    applications = result.get("value", [])
+def find_application(
+    graph: GraphClient,
+    display_name: str,
+    *legacy_display_names: str,
+) -> dict[str, Any] | None:
+    """Find one registration by its current or pre-Concentrey display name."""
+    applications: list[dict[str, Any]] = []
+    for candidate in (display_name, *legacy_display_names):
+        escaped = candidate.replace("'", "''")
+        query = urllib.parse.urlencode({"$filter": f"displayName eq '{escaped}'"})
+        applications.extend(graph.request("GET", f"/applications?{query}").get("value", []))
+    applications = list({application["id"]: application for application in applications}.values())
     if len(applications) > 1:
-        raise RuntimeError(f"Multiple application registrations are named {display_name}")
+        raise RuntimeError(
+            f"Multiple current or legacy application registrations match {display_name}"
+        )
     return applications[0] if applications else None
 
 
@@ -104,7 +115,7 @@ def ensure_service_principal(graph: GraphClient, app_id: str) -> dict[str, Any]:
 
 def ensure_api_application(graph: GraphClient) -> tuple[dict[str, Any], dict[str, str]]:
     """Create or normalize the API registration and both delegated scopes."""
-    application = find_application(graph, API_NAME)
+    application = find_application(graph, API_NAME, LEGACY_API_NAME)
     if application is None:
         scope_ids = {SCOPE_VALUE: str(uuid4()), MOBILE_SCOPE_VALUE: str(uuid4())}
         application = graph.request(
@@ -139,6 +150,7 @@ def ensure_api_application(graph: GraphClient) -> tuple[dict[str, Any], dict[str
         "PATCH",
         f"/applications/{application['id']}",
         {
+            "displayName": API_NAME,
             "identifierUris": [RESOURCE_URI],
             "api": {
                 "requestedAccessTokenVersion": 2,
@@ -155,9 +167,9 @@ def scope_definition(scope_id: str, value: str) -> dict[str, Any]:
     description = (
         "Manage the signed-in user's profile, devices, and phone approvals."
         if mobile
-        else "Access the authenticated soffortbackend MCP tools."
+        else "Access the authenticated Concentrey MCP tools."
     )
-    display_name = "Use soffortbackend mobile approval" if mobile else "Access soffortbackend"
+    display_name = "Use Concentrey mobile approval" if mobile else "Access Concentrey"
     return {
         "adminConsentDescription": description,
         "adminConsentDisplayName": display_name,
@@ -189,7 +201,7 @@ def ensure_client_application(
         "publicClient": {"redirectUris": REDIRECTS},
         "requiredResourceAccess": required_access,
     }
-    application = find_application(graph, CLIENT_NAME)
+    application = find_application(graph, CLIENT_NAME, LEGACY_CLIENT_NAME)
     if application is None:
         return graph.request("POST", "/applications", body)
     graph.request("PATCH", f"/applications/{application['id']}", body)
@@ -201,7 +213,7 @@ def ensure_ios_application(
     api_app_id: str,
     scope_id: str,
 ) -> dict[str, Any]:
-    """Create or normalize the secretless AI Vault iOS registration."""
+    """Create or normalize the secretless Concentrey iOS registration."""
     body = {
         "displayName": IOS_CLIENT_NAME,
         "signInAudience": "AzureADMyOrg",
@@ -214,7 +226,7 @@ def ensure_ios_application(
             }
         ],
     }
-    application = find_application(graph, IOS_CLIENT_NAME)
+    application = find_application(graph, IOS_CLIENT_NAME, LEGACY_IOS_CLIENT_NAME)
     if application is None:
         return graph.request("POST", "/applications", body)
     graph.request("PATCH", f"/applications/{application['id']}", body)
@@ -294,8 +306,27 @@ def ensure_user_flow_application(
 def update_vscode(client_id: str) -> None:
     """Commit-ready the non-secret VS Code client configuration."""
     path = Path(".vscode/mcp.json")
-    document = json.loads(path.read_text(encoding="utf-8"))
-    document["servers"]["soffortbackend"]["oauth"]["clientId"] = client_id
+    raw_document: Any = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw_document, dict):
+        raise RuntimeError(".vscode/mcp.json must contain a JSON object")
+    document = cast(dict[str, Any], raw_document)
+    raw_servers = document.setdefault("servers", {})
+    if not isinstance(raw_servers, dict):
+        raise RuntimeError(".vscode/mcp.json servers must be a JSON object")
+    servers = cast(dict[str, Any], raw_servers)
+    raw_server: Any = (
+        servers.pop("soffortbackend", None) or servers.get("concentrey") or dict[str, Any]()
+    )
+    if not isinstance(raw_server, dict):
+        raise RuntimeError("The Concentrey MCP server definition must be a JSON object")
+    server = cast(dict[str, Any], raw_server)
+    server["type"] = "http"
+    server["url"] = RESOURCE_URI
+    raw_oauth = server.setdefault("oauth", {})
+    if not isinstance(raw_oauth, dict):
+        raise RuntimeError("The Concentrey OAuth definition must be a JSON object")
+    raw_oauth["clientId"] = client_id
+    servers["concentrey"] = server
     path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
 

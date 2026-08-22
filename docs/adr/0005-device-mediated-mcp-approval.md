@@ -1,4 +1,4 @@
-# ADR 0005: phone-mediated Permi vault disclosure
+# ADR 0005: phone-mediated Concentrey vault disclosure
 
 ## Status
 

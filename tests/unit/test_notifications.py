@@ -133,7 +133,7 @@ async def test_apns_accepts_devices_disables_invalid_and_reuses_token(
     assert second.accepted_device_ids == (devices[0].device_id, devices[1].device_id)
     assert notifier._provider_token == token
     assert notifier._http.requests[0][0].startswith("https://api.sandbox.push.apple.com/")
-    assert notifier._http.requests[0][1]["apns-topic"] == "com.soffort.aivault"
+    assert notifier._http.requests[0][1]["apns-topic"] == "com.concentrey.app"
     await notifier.close()
     assert notifier.ready is False
 
