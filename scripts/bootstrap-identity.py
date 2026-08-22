@@ -20,9 +20,14 @@ from typing import Any, cast
 from uuid import uuid4
 
 GRAPH = "https://graph.microsoft.com/v1.0"
-API_NAME = "consentary-api"
-CLIENT_NAME = "consentary-vscode"
-IOS_CLIENT_NAME = "consentary-ios"
+API_NAME = "Consentary API"
+CLIENT_NAME = "Consentary for VS Code"
+# This exact label is shown to customers during the native iOS login. Keep it
+# product-only rather than exposing implementation suffixes such as "-ios".
+IOS_CLIENT_NAME = "Consentary"
+PREVIOUS_API_NAME = "consentary-api"
+PREVIOUS_CLIENT_NAME = "consentary-vscode"
+PREVIOUS_IOS_CLIENT_NAME = "consentary-ios"
 LEGACY_API_NAME = "soffortbackend-api"
 LEGACY_CLIENT_NAME = "soffortbackend-vscode"
 LEGACY_IOS_CLIENT_NAME = "soffortbackend-ios"
@@ -101,21 +106,35 @@ def find_application(
     return applications[0] if applications else None
 
 
-def ensure_service_principal(graph: GraphClient, app_id: str) -> dict[str, Any]:
-    """Create the tenant-local service principal when it does not exist."""
+def ensure_service_principal(
+    graph: GraphClient,
+    app_id: str,
+    display_name: str,
+) -> dict[str, Any]:
+    """Create the tenant-local service principal and normalize its visible label."""
     query = urllib.parse.urlencode({"$filter": f"appId eq '{app_id}'"})
     result = graph.request("GET", f"/servicePrincipals?{query}")
     principals = result.get("value", [])
     if len(principals) > 1:
         raise RuntimeError(f"Multiple service principals exist for appId {app_id}")
-    if principals:
-        return principals[0]
-    return graph.request("POST", "/servicePrincipals", {"appId": app_id})
+    principal = (
+        principals[0]
+        if principals
+        else graph.request("POST", "/servicePrincipals", {"appId": app_id})
+    )
+    if principal.get("displayName") != display_name:
+        graph.request(
+            "PATCH",
+            f"/servicePrincipals/{principal['id']}",
+            {"displayName": display_name},
+        )
+        principal = graph.request("GET", f"/servicePrincipals/{principal['id']}")
+    return principal
 
 
 def ensure_api_application(graph: GraphClient) -> tuple[dict[str, Any], dict[str, str]]:
     """Create or normalize the API registration and both delegated scopes."""
-    application = find_application(graph, API_NAME, LEGACY_API_NAME)
+    application = find_application(graph, API_NAME, PREVIOUS_API_NAME, LEGACY_API_NAME)
     if application is None:
         scope_ids = {SCOPE_VALUE: str(uuid4()), MOBILE_SCOPE_VALUE: str(uuid4())}
         application = graph.request(
@@ -201,7 +220,12 @@ def ensure_client_application(
         "publicClient": {"redirectUris": REDIRECTS},
         "requiredResourceAccess": required_access,
     }
-    application = find_application(graph, CLIENT_NAME, LEGACY_CLIENT_NAME)
+    application = find_application(
+        graph,
+        CLIENT_NAME,
+        PREVIOUS_CLIENT_NAME,
+        LEGACY_CLIENT_NAME,
+    )
     if application is None:
         return graph.request("POST", "/applications", body)
     graph.request("PATCH", f"/applications/{application['id']}", body)
@@ -226,7 +250,12 @@ def ensure_ios_application(
             }
         ],
     }
-    application = find_application(graph, IOS_CLIENT_NAME, LEGACY_IOS_CLIENT_NAME)
+    application = find_application(
+        graph,
+        IOS_CLIENT_NAME,
+        PREVIOUS_IOS_CLIENT_NAME,
+        LEGACY_IOS_CLIENT_NAME,
+    )
     if application is None:
         return graph.request("POST", "/applications", body)
     graph.request("PATCH", f"/applications/{application['id']}", body)
@@ -350,9 +379,9 @@ def main() -> int:
     api_app, scope_ids = ensure_api_application(graph)
     client_app = ensure_client_application(graph, api_app["appId"], scope_ids[SCOPE_VALUE])
     ios_app = ensure_ios_application(graph, api_app["appId"], scope_ids[MOBILE_SCOPE_VALUE])
-    api_principal = ensure_service_principal(graph, api_app["appId"])
-    client_principal = ensure_service_principal(graph, client_app["appId"])
-    ios_principal = ensure_service_principal(graph, ios_app["appId"])
+    api_principal = ensure_service_principal(graph, api_app["appId"], API_NAME)
+    client_principal = ensure_service_principal(graph, client_app["appId"], CLIENT_NAME)
+    ios_principal = ensure_service_principal(graph, ios_app["appId"], IOS_CLIENT_NAME)
     grant_admin_consent(graph, api_principal, client_principal, SCOPE_VALUE)
     grant_admin_consent(graph, api_principal, ios_principal, MOBILE_SCOPE_VALUE)
     if args.user_flow_display_name:

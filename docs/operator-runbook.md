@@ -6,7 +6,7 @@
 2. Authenticate `az` to subscription `86dfb8ca-2e38-4abb-9072-e8d077af295a` and authenticate `gh` as a repository administrator.
 3. Run `./scripts/preflight.sh` and address every SKU, identity, or AKS-version failure.
 4. Run `./scripts/bootstrap-azure.sh --budget-email <operator-email>`. This creates the development resource group, budget, and scoped GitHub OIDC identity. Flux reads the public repository over HTTPS and needs no deploy key.
-5. Authenticate Azure CLI to the External ID tenant and run `python scripts/bootstrap-identity.py --tenant-id <external-tenant-guid> --tenant-subdomain <ciam-subdomain> --user-flow-display-name soffortbackend_apple_email_v2 --github-repository AlphonseKurian1618/soffortmcp`. This creates both public clients, associates them with the active flow, and writes non-secret identity outputs to protected GitHub environment variables.
+5. Authenticate Azure CLI to the External ID tenant and run `python scripts/bootstrap-identity.py --tenant-id <external-tenant-guid> --tenant-subdomain <ciam-subdomain> --user-flow-display-name consentary_sign_up_sign_in --github-repository AlphonseKurian1618/soffortmcp`. This creates both public clients, associates them with the active flow, and writes non-secret identity outputs to protected GitHub environment variables.
 6. In Apple Developer, enable Push Notifications for the explicit App ID
    `com.consentary.app`. The existing token-based APNs key `KHZKTB324C` is team-scoped and may be
    reused; the Sign in with Apple key `599S6S73Y2` remains a separate credential.
