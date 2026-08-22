@@ -4,7 +4,8 @@ The VS Code token authenticates the MCP caller; it never substitutes for the iPh
 
 ## Sequence
 
-1. The server validates the caller and exact tool arguments, then writes a two-minute pending request to Cosmos.
+0. The signed-in app publishes a value-free property index after local vault refreshes. MCP discovery reads this index without notifying or prompting the phone.
+1. For a value request, the server validates the caller and exact tool arguments, then writes a two-minute pending request to Cosmos.
 2. APNs sends only `event_id`, `event_type=mcp_approval_requested`, and `approval_id`.
 3. The app authenticates with `soffortbackend.mobile` and fetches authoritative request data. `GET /v1/approvals` recovers requests after missed pushes.
 4. Every field begins unselected. Missing fields are disabled. The phone signs a decision binding request, nonce, tool, argument hash, decision ID, result hash, and expiry. Protocol contract v3 also binds the exact phone-authored metadata manifest.
@@ -20,13 +21,14 @@ All `/v1` routes require the iOS public client, exact tenant, API audience, and 
 | `POST /v1/devices/enrollment-challenges` | Create a five-minute, one-use nonce |
 | `PUT /v1/devices/{uuidv7}` | Enroll APNs token and Secure Enclave P-256 public JWK |
 | `DELETE /v1/devices/{uuidv7}` | Unlink the phone |
+| `PUT /v1/property-index` | Replace this subject's value-free property metadata |
 | `GET /v1/approvals` | List this subject's live pending requests |
 | `GET /v1/approvals/{uuidv7}` | Fetch authoritative request and disclosure public key |
 | `POST /v1/approvals/{uuidv7}/decisions` | Submit a signed result manifest |
 
 Enrollment and decision signatures are DER ECDSA/SHA-256 with unpadded base64url. Canonical messages live in `device_security.py` and have cross-language test vectors. Any protocol change must update backend and iOS together.
 
-Property keys are `vault.` plus a 43-character base64url SHA-256 digest derived locally from the record, component, and semantic field identity. They are stable for that field instance but reveal no local UUID. Discovery is capped at 1,024 populated fields and selective requests at 100 handles. User-authored labels are returned only after phone approval, retained with the request's short TTL, and never logged.
+Property keys are `vault.` plus a 43-character base64url SHA-256 digest derived locally from the record, component, and semantic field identity. They are stable for that field instance but reveal no local UUID. Discovery is capped at 1,024 populated fields and selective requests at 100 handles. The index stores bounded display labels, value types, and sensitivity—not values—and is never logged.
 
 ## Failure boundary
 

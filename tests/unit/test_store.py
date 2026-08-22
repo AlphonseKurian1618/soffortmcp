@@ -195,6 +195,10 @@ async def test_cosmos_store_normal_lifecycle(
     await store.disable_device(partition, device.device_id)
     assert await store.list_active_devices(partition) == []
 
+    assert await store.get_property_index(partition) is None
+    await store.put_property_index(partition, (EMAIL_METADATA,))
+    assert (await store.get_property_index(partition)).properties == (EMAIL_METADATA,)
+
     approval = _approval(partition)
     await store.create_approval(approval)
     persisted = await store.get_approval(partition, approval.approval_id)

@@ -6,7 +6,7 @@ from uuid import uuid7
 
 import httpx
 import pytest
-from conftest import OBJECT_ID, TENANT_ID
+from conftest import EMAIL_KEY, OBJECT_ID, TENANT_ID
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -111,6 +111,23 @@ async def test_device_enrollment_pending_recovery_and_signed_decision(
                 },
             )
             assert enrolled.status_code == 201, enrolled.text
+
+            indexed = await client.put(
+                "/v1/property-index",
+                json={
+                    "properties": [
+                        {
+                            "key": EMAIL_KEY,
+                            "display_name": "Personal · Email",
+                            "value_type": "email",
+                            "sensitivity": "moderate",
+                        }
+                    ]
+                },
+            )
+            assert indexed.status_code == 200, indexed.text
+            assert indexed.json()["property_count"] == 1
+            assert (await store.get_property_index(partition_key)).properties[0].key == EMAIL_KEY
 
             now = datetime.now(UTC)
             approval = Approval(

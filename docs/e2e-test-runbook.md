@@ -76,10 +76,10 @@ No removed or legacy tool is acceptable.
 ## 5. Discovery test
 
 1. Call `list_available_properties` with `{}`.
-2. Open the Permi request and approve.
-3. Require `status: approved` with metadata for every populated built-in and custom field.
+2. Confirm no phone notification or approval card appears.
+3. Require `status: available` with metadata for every populated built-in and custom field.
 4. Confirm no `value` member and no fictional plaintext appears anywhere in the result.
-5. Repeat and deny. Require `{"status":"denied","properties":[]}`.
+5. Add or remove a vault field on the phone, then repeat and confirm the index reflects the change.
 
 ## 6. Selective disclosure test
 

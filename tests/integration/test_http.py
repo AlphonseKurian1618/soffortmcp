@@ -200,6 +200,7 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
         updated_at=datetime.now(UTC),
     )
     store.devices[(partition_key, device.device_id)] = device
+    await store.put_property_index(partition_key, (EMAIL_METADATA,))
     app = create_app(
         settings,
         token_verifier=fake_verifier,
@@ -255,10 +256,13 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
         "list_available_properties",
         "request_properties",
     ]
+    request_tool = listed.json()["result"]["tools"][1]
+    property_items = request_tool["inputSchema"]["properties"]["properties"]["items"]
+    assert property_items == {"type": "string"}
     assert called.status_code == 200
     result = called.json()["result"]
     assert result["structuredContent"] == {
-        "status": "approved",
+        "status": "available",
         "properties": [
             {
                 "key": EMAIL_KEY,
@@ -271,17 +275,17 @@ async def test_modern_protocol_lists_and_calls_exact_tool(
     assert result["content"] == [
         {
             "type": "text",
-            "text": "The user approved discovery of 1 available properties.",
+            "text": "Found 1 available vault properties.",
         }
     ]
 
 
 @pytest.mark.asyncio
-async def test_expected_approval_failure_is_a_meaningful_mcp_tool_error(
+async def test_discovery_without_index_returns_empty_without_phone_approval(
     settings: Settings,
     fake_verifier,
 ) -> None:
-    """Prevent approval failures from being masked by output-schema validation."""
+    """A new account has an empty manifest and never creates a phone request."""
     app = create_app(settings, token_verifier=fake_verifier)
     headers = {
         "Authorization": "Bearer valid-test-token",
@@ -319,18 +323,9 @@ async def test_expected_approval_failure_is_a_meaningful_mcp_tool_error(
 
     assert called.status_code == 200
     result = called.json()["result"]
-    assert result["isError"] is True
-    assert result["content"] == [
-        {
-            "type": "text",
-            "text": (
-                "Error executing tool list_available_properties: No iPhone is linked. "
-                "Open Permi and link this iPhone, then try again."
-            ),
-        }
-    ]
-    assert "structuredContent" not in result
-    assert "validation error" not in called.text
+    assert result["isError"] is False
+    assert result["structuredContent"] == {"status": "available", "properties": []}
+    assert result["content"] == [{"type": "text", "text": "Found 0 available vault properties."}]
 
 
 @pytest.mark.asyncio
